@@ -1,6 +1,6 @@
 {
   "name": "@pdf-tlv/resume",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "A TypeScript module for generating PDF resumes using pdf-lib and @pdf-lib/fontkit.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -9,11 +9,13 @@
   ],
   "scripts": {
     "build": "tsc",
-    "prepare": "yarn build"
+    "prepare": "yarn build",
+    "publish": "yarn build && yarn npm publish --access public",
+    "patch": "yarn build && yarn npm version patch && yarn npm publish --access public"
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/gmdivani/pdf-resume.git"
+    "url": "https://github.com/mdivani/talv-pdf"
   },
   "author": "Giorgi Mdivani <giorgi@gmdivani.agency>",
   "license": "MIT",

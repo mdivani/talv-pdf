@@ -1,6 +1,6 @@
 import { PDFDocument, rgb, PDFPage, StandardFonts, PDFFont, breakTextIntoLines } from 'pdf-lib';
 import fontkit from '@pdf-lib/fontkit';
-import { getIconPath, getLinkIconType } from './utils';
+import { fromHexStr, getIconPath, getLinkIconType } from './utils';
 import { fetchCustomFont, fetchDefaultFont } from './assets';
 import {
   DrawCircleParams,
@@ -32,7 +32,7 @@ export const DEFAULT_CONFIG = {
   leading: 'md',
   fonts: ['regular', 'semibold', 'bold', 'italic', 'bold-italic'],
   isPreview: true,
-  color: rgb(0, 0.36, 0.64),
+  color: '#00549F',
 };
 
 export class BasePDFService {
@@ -68,7 +68,7 @@ export class BasePDFService {
     this.$paddingX = screen.paddingX;
     this.$paddingY = screen.paddingY;
     this.$isPreview = isPreview;
-    this.$colors.secondary = color;
+    this.$colors.secondary = fromHexStr(color);
   }
 
   public get currentPage() {
@@ -188,7 +188,7 @@ export class BasePDFService {
     this.$height = screen.height;
     this.$paddingX = screen.paddingX;
     this.$paddingY = screen.paddingY;
-    this.$colors.secondary = color;
+    this.$colors.secondary = fromHexStr(color);
 
     this.$document = await PDFDocument.create();
     this.$defaultFont = await this.$document.embedFont(StandardFonts.Helvetica);

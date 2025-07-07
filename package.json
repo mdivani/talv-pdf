@@ -1,5 +1,5 @@
 {
-  "private": true,
+  "name": "pdf-tlv",
   "packageManager": "yarn@4.3.1",
   "workspaces": [
     "packages/*"
