@@ -38,4 +38,15 @@ export interface ResumeConfig {
   leading: Size;
 }
 
-export type CustomFont = Record<string, Record<string, string>>;
+export type FontMap = Record<FontType, string>
+
+export type CustomFont = {
+  name: string;
+  fonts: FontMap
+};
+
+export type Watermark = {
+  text?: string;
+  url?: string
+  color?: string;
+}

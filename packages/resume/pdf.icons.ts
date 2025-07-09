@@ -69,7 +69,7 @@ export class PDFIcons extends BasePDFService {
 
     let currentY = y - translateY;
     if (this.$fontScale === 'sm') {
-      currentY -= 3;
+      currentY += 1;
     }
 
     if (this.$fontScale === 'md') {
@@ -97,7 +97,7 @@ export class PDFIcons extends BasePDFService {
 
     let currentY = y - translateY;
     if (this.$fontScale === 'sm') {
-      currentY -= 3;
+      currentY += 0.5;
     }
 
     if (this.$fontScale === 'md') {
@@ -125,7 +125,7 @@ export class PDFIcons extends BasePDFService {
 
     let currentY = y - translateY;
     if (this.$fontScale === 'sm') {
-      currentY -= 3;
+      currentY += 0;
     }
 
     if (this.$fontScale === 'md') {
@@ -153,7 +153,7 @@ export class PDFIcons extends BasePDFService {
 
     let currentY = y - translateY;
     if (this.$fontScale === 'sm') {
-      currentY -= 3;
+      currentY += 1;
     }
 
     if (this.$fontScale === 'md') {
@@ -181,7 +181,7 @@ export class PDFIcons extends BasePDFService {
 
     let currentY = y - translateY;
     if (this.$fontScale === 'sm') {
-      currentY -= 3;
+      currentY += 1;
     }
 
     if (this.$fontScale === 'md') {

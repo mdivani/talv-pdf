@@ -1,6 +1,6 @@
 {
   "name": "@pdf-tlv/resume",
-  "version": "0.1.1",
+  "version": "0.2.3",
   "description": "A TypeScript module for generating PDF resumes using pdf-lib and @pdf-lib/fontkit.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -24,15 +24,15 @@
     "pdf-lib": "1.17.1"
   },
   "devDependencies": {
-    "@types/jest": "^30.0.0",
+    "@types/jest": "30.0.0",
     "@typescript-eslint/eslint-plugin": "8.35.1",
     "@typescript-eslint/parser": "8.35.1",
     "eslint": "9.30.1",
     "eslint-config-prettier": "10.1.5",
     "eslint-plugin-prettier": "5.5.1",
-    "jest": "^30.0.4",
+    "jest": "30.0.4",
     "prettier": "3.6.2",
-    "ts-jest": "^29.4.0",
+    "ts-jest": "29.4.0",
     "typescript": "5.8.3"
   },
   "publishConfig": {

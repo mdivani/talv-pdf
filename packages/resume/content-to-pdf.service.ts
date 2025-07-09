@@ -4,13 +4,12 @@ import { WriteLineParams, WriteLineResponse, FontType, Content } from './types';
 import { PDFIcons } from './pdf.icons';
 
 export class ContentToPdfService extends PDFIcons {
-  constructor({ screen, fontSize, leading, color, isPreview = true, fonts } = DEFAULT_CONFIG) {
+  constructor({ screen, fontSize, leading, color, isPreview = true } = DEFAULT_CONFIG) {
     super({
       screen,
       fontSize,
       leading,
       isPreview,
-      fonts,
       color,
     });
   }

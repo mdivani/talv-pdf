@@ -1,9 +1,18 @@
 import { ResumeData } from './types';
 import { Template, Group, Item, Field, Coords, Size, LabelItem, SeparatorVariant } from './types';
 import { ContentToPdfService } from './content-to-pdf.service';
-import { DEFAULT_CONFIG } from './pdf.service';
+import { Config, DEFAULT_CONFIG } from './pdf.service';
 import { getWidth, mapDataToTemplate, hasContent, hasText } from './utils';
+import { defaultFontMap } from './assets';
 export { formatTextWithAffixes, getWidth, mapDataToTemplate } from './utils';
+
+type CreateParams = Partial<Config>;
+
+type GenerateParams = {
+  data: ResumeData;
+  template: Template;
+  options?: CreateParams;
+};
 
 export class ResumePDFService extends ContentToPdfService {
   private $ready = false;
@@ -12,10 +21,17 @@ export class ResumePDFService extends ContentToPdfService {
     super();
   }
 
-  async create({ fonts, ...rest } = DEFAULT_CONFIG) {
-    await super.init({ fonts, ...rest });
+  async create({
+    screen = DEFAULT_CONFIG.screen,
+    fontSize = DEFAULT_CONFIG.fontSize,
+    leading = DEFAULT_CONFIG.leading,
+    color = DEFAULT_CONFIG.color,
+    isPreview = DEFAULT_CONFIG.isPreview,
+    watermark,
+  }: CreateParams = DEFAULT_CONFIG) {
+    await super.init({ screen, fontSize, leading, color, isPreview, watermark });
 
-    this.$fonts = await super.embedFonts(['regular', 'semibold', 'bold', 'italic', 'bold-italic']);
+    this.$fonts = await super.embedFonts(defaultFontMap);
 
     this.$ready = true;
   }
@@ -24,7 +40,9 @@ export class ResumePDFService extends ContentToPdfService {
     return this.$ready;
   }
 
-  async generate(data: ResumeData, template: Template) {
+  async generate({ data, template, options = {} }: GenerateParams) {
+    await this.update(options);
+
     const fields = mapDataToTemplate(data, template);
 
     await this.writeToPDF(fields.groups);

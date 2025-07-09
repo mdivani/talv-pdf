@@ -1,7 +1,7 @@
 import { PDFDocument, rgb, PDFPage, StandardFonts, PDFFont, breakTextIntoLines } from 'pdf-lib';
 import fontkit from '@pdf-lib/fontkit';
 import { fromHexStr, getIconPath, getLinkIconType } from './utils';
-import { fetchCustomFont, fetchDefaultFont } from './assets';
+import { defaultFontMap, fetchCustomFont, fetchImage } from './assets';
 import {
   DrawCircleParams,
   DrawIconParams,
@@ -17,11 +17,28 @@ import {
   TextWidthParams,
   Coords,
   JustifyTextParams,
+  CustomFont,
+  Watermark,
 } from './types';
 import { getFontSize, getLineHeight, getSeparatorSize, getSpacing, justifyLine } from './utils';
 import { iconScaleMap } from './constants';
 
-export const DEFAULT_CONFIG = {
+export type Config = {
+  customFont?: CustomFont;
+  watermark?: Watermark,
+  screen: {
+    width: number;
+    height: number;
+    paddingX: number;
+    paddingY: number;
+  };
+  color: string;
+  fontSize: Size;
+  leading: Size;
+  isPreview: boolean;
+};
+
+export const DEFAULT_CONFIG: Config = {
   screen: {
     width: 595,
     height: 842,
@@ -30,7 +47,6 @@ export const DEFAULT_CONFIG = {
   },
   fontSize: 'lg',
   leading: 'md',
-  fonts: ['regular', 'semibold', 'bold', 'italic', 'bold-italic'],
   isPreview: true,
   color: '#00549F',
 };
@@ -51,14 +67,16 @@ export class BasePDFService {
   protected $paddingX = 20;
   protected $paddingY = 20;
   protected $safeArea = 40;
+  protected $watermark?: Watermark;
 
   protected $isPreview = true;
+  protected $fontFamily = 'Helvetica';
 
   protected $document: PDFDocument | null = null;
   protected $pages: PDFPage[] = [];
   protected $defaultFont?: PDFFont;
 
-  constructor({ screen, fontSize, leading, color, isPreview = true } = DEFAULT_CONFIG) {
+  constructor({ screen, fontSize, leading, color, isPreview = true, watermark } = DEFAULT_CONFIG) {
     this.$fontScale = fontSize as Size;
     this.$leading = leading as Size;
     this.$width = screen.width;
@@ -69,6 +87,7 @@ export class BasePDFService {
     this.$paddingY = screen.paddingY;
     this.$isPreview = isPreview;
     this.$colors.secondary = fromHexStr(color);
+    this.$watermark = watermark;
   }
 
   public get currentPage() {
@@ -140,7 +159,6 @@ export class BasePDFService {
 
   getTextDimensions(options: TextLinesParams) {
     const { size, leading, wordBreaks = [' '] } = options;
-
     const fontSize = this.fontSize(size);
 
     const lines = this.getTextLines({ ...options, wordBreaks });
@@ -192,46 +210,43 @@ export class BasePDFService {
 
     this.$document = await PDFDocument.create();
     this.$defaultFont = await this.$document.embedFont(StandardFonts.Helvetica);
-    this.$pages = [];
+    this.$document.registerFontkit(fontkit);
+  }
+
+  async update(options: Partial<Omit<Config, 'screen' | 'fonts'>>) {
+    if (!this.$document) throw new Error('Initialise document first');
+
+    if (options.color && options.color !== this.$colors.secondary.toString())
+      this.$colors.secondary = fromHexStr(options.color);
+
+    if (options.fontSize && options.fontSize !== this.$fontScale) this.$fontScale = options.fontSize as Size;
+    if (options.leading && options.leading !== this.$leading) this.$leading = options.leading as Size;
+
+    if (options.customFont && options.customFont.name !== this.$fontFamily) {
+      this.$fonts = await this.embedFonts(options.customFont);
+    }
+
+    this.removeAllPages();
 
     await this.addPage();
   }
 
-  async embedFonts(fonts: FontType[], customFont?: Record<FontType, string>) {
+  async embedFonts(customFont: CustomFont = defaultFontMap) {
     if (!this.$document) throw new Error('Initialise document first');
 
-    this.$document.registerFontkit(fontkit);
-    const doc = this.$document;
+    const doc = this.$document; // ts workaround to avoid type error
 
-    if (customFont) {
-      const customFonts = await fetchCustomFont(customFont);
-      const promise = customFonts.map(async (font) => {
-        return {
-          [font.type]: await doc.embedFont(font.arrayBuffer),
-        };
-      });
+    const customFonts = await fetchCustomFont(customFont.fonts);
+    const promise = customFonts.map(async (font) => {
+      return {
+        [font.type]: await doc.embedFont(font.arrayBuffer),
+      };
+    });
 
-      const customFontsArr = await Promise.all(promise);
+    const customFontsArr = await Promise.all(promise);
 
-      this.$fonts = { ...this.$fonts, ...customFontsArr };
-    } else {
-      const promise = fonts.map(async (type) => {
-        const font = await fetchDefaultFont(type);
-        return {
-          [type]: await doc.embedFont(font),
-        };
-      });
-
-      const fontsArr = await Promise.all(promise);
-
-      const customFonts = fontsArr.reduce<Partial<Record<FontType, PDFFont>>>(
-        (accumulator, font) => ({ ...accumulator, ...font }),
-        {},
-      );
-
-      this.$fonts = { ...this.$fonts, ...customFonts };
-      return customFonts;
-    }
+    this.$fonts = { ...this.$fonts, ...customFontsArr };
+    this.$fontFamily = customFont.name;
 
     return this.$fonts;
   }
@@ -241,23 +256,30 @@ export class BasePDFService {
 
     const page = await this.$document.addPage([this.$width, this.$height]);
 
-    // if (this.$isPreview) {
-    //   const logoBytes = await fetchImage('/public/logo.png');
-    //   const logo = await this.$document.embedPng(logoBytes as unknown as Uint8Array);
+    if (this.$watermark) {
 
-    //   page.drawImage(logo, {
-    //     x: 10,
-    //     y: 5,
-    //     width: 14,
-    //     height: 16,
-    //   });
-    //   page.drawText('talvio.co', {
-    //     x: 28,
-    //     y: 10,
-    //     size: this.fontSize('sm'),
-    //     color: rgb(0, 0.36, 0.64),
-    //   });
-    // }
+      if (this.$watermark.url) {
+        const logoBytes = await fetchImage(this.$watermark.url);
+        const logo = await this.$document.embedPng(logoBytes as unknown as Uint8Array);
+
+        page.drawImage(logo, {
+          x: 10,
+          y: 5,
+          width: 14,
+          height: 16,
+        });
+      }
+
+      if (this.$watermark.text) {
+        const color = this.$watermark.color ? fromHexStr(this.$watermark.color) : this.$colors.primary;
+        page.drawText(this.$watermark.text, {
+          x: 28,
+          y: 10,
+          size: this.fontSize('sm'),
+          color,
+        });
+      }
+    }
 
     this.$pages.push(page);
 
@@ -303,7 +325,7 @@ export class BasePDFService {
     const fontSize = this.fontSize(size);
     const lineHeight = this.lineHeight(fontSize, leading);
     const indent = icon || bullet ? this.spacing('lg') : 0;
-    console.log('text', text, leading, lineHeight);
+
     const { height: textHeight, width: textWidth } = this.getTextDimensions({
       text,
       font,
@@ -642,5 +664,21 @@ export class BasePDFService {
     if (!this.$document) throw new Error('Initialise document first');
 
     return this.$document.save();
+  }
+
+  removeAllPages() {
+    if (!this.$document) throw new Error('Initialise document first');
+
+    const count = this.$document.getPageCount();
+
+    if (count === 0) {
+      this.$pages = [];
+      return
+    }
+
+    this.$document.removePage(0);
+
+    this.removeAllPages();
+
   }
 }
