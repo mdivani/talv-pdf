@@ -1,7 +1,7 @@
 import { ResumeData } from './types';
 import { Template, Group, Item, Field, Coords, Size, LabelItem, SeparatorVariant } from './types';
 import { ContentToPdfService } from './content-to-pdf.service';
-import { Config, DEFAULT_CONFIG } from './pdf.service';
+import { Config, DEFAULT_CONFIG, RenderOptions } from './pdf.service';
 import { getWidth, mapDataToTemplate, hasContent, hasText } from './utils';
 import { defaultFontMap } from './assets';
 export { formatTextWithAffixes, getWidth, mapDataToTemplate } from './utils';
@@ -11,11 +11,13 @@ type CreateParams = Partial<Config>;
 type GenerateParams = {
   data: ResumeData;
   template: Template;
-  options?: CreateParams;
+  options?: RenderOptions;
 };
 
 export class ResumePDFService extends ContentToPdfService {
   private $ready = false;
+  /** Tail of the render queue. Renders share one document, so they must not interleave. */
+  private $queue: Promise<unknown> = Promise.resolve();
 
   constructor() {
     super();
@@ -26,12 +28,14 @@ export class ResumePDFService extends ContentToPdfService {
     fontSize = DEFAULT_CONFIG.fontSize,
     leading = DEFAULT_CONFIG.leading,
     color = DEFAULT_CONFIG.color,
+    colors,
     isPreview = DEFAULT_CONFIG.isPreview,
     watermark,
+    customFont = defaultFontMap,
   }: CreateParams = DEFAULT_CONFIG) {
-    await super.init({ screen, fontSize, leading, color, isPreview, watermark });
+    await super.init({ screen, fontSize, leading, color, colors, isPreview, watermark, customFont });
 
-    this.$fonts = await super.embedFonts(defaultFontMap);
+    this.$fonts = await super.embedFonts(customFont);
 
     this.$ready = true;
   }
@@ -40,14 +44,24 @@ export class ResumePDFService extends ContentToPdfService {
     return this.$ready;
   }
 
-  async generate({ data, template, options = {} }: GenerateParams) {
-    await this.update(options);
+  /**
+   * Renders one resume into a brand-new document and returns its bytes. Calls on the same
+   * instance run one at a time, so a render never sees another render's pages or settings.
+   */
+  generate({ data, template, options = {} }: GenerateParams): Promise<Uint8Array> {
+    const render = this.$queue.then(async () => {
+      await this.update(options);
 
-    const fields = mapDataToTemplate(data, template);
+      const fields = mapDataToTemplate(data, template);
 
-    await this.writeToPDF(fields.groups);
+      await this.writeToPDF(fields.groups);
 
-    return this.save();
+      return this.save();
+    });
+
+    this.$queue = render.catch(() => undefined);
+
+    return render;
   }
 
   async writeToPDF(groups: Group<Item>[]) {

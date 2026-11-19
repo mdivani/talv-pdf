@@ -1,6 +1,6 @@
 {
   "name": "@pdf-tlv/resume",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "description": "A TypeScript module for generating PDF resumes using pdf-lib and @pdf-lib/fontkit.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -8,7 +8,8 @@
     "dist"
   ],
   "scripts": {
-    "build": "tsc",
+    "clean": "node -e \"require('fs').rmSync('dist', { recursive: true, force: true })\"",
+    "build": "yarn clean && tsc",
     "prepare": "yarn build",
     "publish": "yarn build && yarn npm publish --access public",
     "patch": "yarn build && yarn npm version patch && yarn npm publish --access public"
@@ -39,6 +40,6 @@
     "access": "public"
   },
   "engines": {
-    "node": ">=14"
+    "node": ">=18"
   }
 }

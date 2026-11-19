@@ -1,4 +1,4 @@
-import { PDFDocument, rgb, PDFPage, StandardFonts, PDFFont, breakTextIntoLines } from 'pdf-lib';
+import { PDFDocument, PDFPage, StandardFonts, PDFFont, RGB, breakTextIntoLines } from 'pdf-lib';
 import fontkit from '@pdf-lib/fontkit';
 import { fromHexStr, getIconPath, getLinkIconType } from './utils';
 import { defaultFontMap, fetchCustomFont, fetchImage } from './assets';
@@ -23,19 +23,33 @@ import {
 import { getFontSize, getLineHeight, getSeparatorSize, getSpacing, justifyLine } from './utils';
 import { iconScaleMap } from './constants';
 
+/** Hex colors (for example `'#00549F'`) for any of the template color slots. */
+export type ColorOverrides = Partial<Record<Colors, string>>;
+
 export type Config = {
   customFont?: CustomFont;
-  watermark?: Watermark,
+  watermark?: Watermark;
   screen: {
     width: number;
     height: number;
     paddingX: number;
     paddingY: number;
   };
+  /** Shorthand for `colors.secondary`. `colors.secondary` wins when both are set. */
   color: string;
+  colors?: ColorOverrides;
   fontSize: Size;
   leading: Size;
   isPreview: boolean;
+};
+
+/** Options that can be overridden for a single render. */
+export type RenderOptions = Partial<Pick<Config, 'color' | 'colors' | 'fontSize' | 'leading' | 'customFont'>>;
+
+export const DEFAULT_COLORS: Record<Colors, string> = {
+  primary: '#1C1C1C',
+  secondary: '#00549F',
+  neutral: '#7A7A7A',
 };
 
 export const DEFAULT_CONFIG: Config = {
@@ -48,21 +62,31 @@ export const DEFAULT_CONFIG: Config = {
   fontSize: 'lg',
   leading: 'md',
   isPreview: true,
-  color: '#00549F',
+  color: DEFAULT_COLORS.secondary,
 };
+
+type FontBytes = Array<{ type: FontType; arrayBuffer: ArrayBuffer }>;
+
+const fontCacheKey = (font: CustomFont) => JSON.stringify([font.name, font.fonts]);
+
+/** Folds the `color` shorthand into `colors` so layers can be merged key by key. */
+const normalizeColors = ({ color, colors }: Pick<Partial<Config>, 'color' | 'colors'>): ColorOverrides => ({
+  ...(color ? { secondary: color } : {}),
+  ...colors,
+});
 
 export class BasePDFService {
   protected $width = 595;
   protected $height = 842;
-  protected $maxWidth = 515;
-  protected $maxHeight = 762;
+  protected $maxWidth = 555;
+  protected $maxHeight = 802;
   protected $fonts: Partial<Record<FontType, PDFFont>> = {};
   protected $fontScale: Size = 'md';
   protected $leading: Size = 'md';
-  protected $colors = {
-    primary: rgb(0.11, 0.11, 0.11),
-    secondary: rgb(0, 0.36, 0.64),
-    neutral: rgb(0.48, 0.48, 0.48),
+  protected $colors: Record<Colors, RGB> = {
+    primary: fromHexStr(DEFAULT_COLORS.primary),
+    secondary: fromHexStr(DEFAULT_COLORS.secondary),
+    neutral: fromHexStr(DEFAULT_COLORS.neutral),
   };
   protected $paddingX = 20;
   protected $paddingY = 20;
@@ -76,18 +100,16 @@ export class BasePDFService {
   protected $pages: PDFPage[] = [];
   protected $defaultFont?: PDFFont;
 
-  constructor({ screen, fontSize, leading, color, isPreview = true, watermark } = DEFAULT_CONFIG) {
-    this.$fontScale = fontSize as Size;
-    this.$leading = leading as Size;
-    this.$width = screen.width;
-    this.$maxWidth = screen.width - 2 * screen.paddingX;
-    this.$height = screen.height;
-    this.$maxHeight = screen.height - 2 * screen.paddingY;
-    this.$paddingX = screen.paddingX;
-    this.$paddingY = screen.paddingY;
-    this.$isPreview = isPreview;
-    this.$colors.secondary = fromHexStr(color);
-    this.$watermark = watermark;
+  /** Settings from the constructor or `init()`. Per-render overrides are layered on top and never written back. */
+  protected $baseConfig: Config;
+  /** Typeface embedded into every new document unless a render overrides it. */
+  protected $baseFont?: CustomFont;
+  /** Downloaded font files, so a fresh document per render doesn't re-download them. */
+  private $fontCache = new Map<string, FontBytes>();
+
+  constructor(config: Config = DEFAULT_CONFIG) {
+    this.$baseConfig = config;
+    this.applyConfig(config);
   }
 
   public get currentPage() {
@@ -199,36 +221,95 @@ export class BasePDFService {
     });
   }
 
-  async init({ fontSize, leading, screen, color } = DEFAULT_CONFIG) {
-    this.$fontScale = fontSize as Size;
-    this.$leading = leading as Size;
+  /** Sets every layout and color field from a full config. Derived sizes are recomputed here so they never go stale. */
+  protected applyConfig({ screen, fontSize, leading, color, colors, isPreview = true, watermark }: Config) {
+    this.$fontScale = fontSize;
+    this.$leading = leading;
     this.$width = screen.width;
     this.$height = screen.height;
     this.$paddingX = screen.paddingX;
     this.$paddingY = screen.paddingY;
-    this.$colors.secondary = fromHexStr(color);
+    this.$maxWidth = screen.width - 2 * screen.paddingX;
+    this.$maxHeight = screen.height - 2 * screen.paddingY;
+    this.$isPreview = isPreview;
+    this.$watermark = watermark;
 
-    this.$document = await PDFDocument.create();
-    this.$defaultFont = await this.$document.embedFont(StandardFonts.Helvetica);
-    this.$document.registerFontkit(fontkit);
+    const hex = { ...DEFAULT_COLORS, ...normalizeColors({ color, colors }) };
+    this.$colors = {
+      primary: fromHexStr(hex.primary),
+      secondary: fromHexStr(hex.secondary),
+      neutral: fromHexStr(hex.neutral),
+    };
   }
 
-  async update(options: Partial<Omit<Config, 'screen' | 'fonts'>>) {
+  /** Layers per-render options over the base config without mutating it. Undefined options are ignored. */
+  protected resolveConfig(options: RenderOptions = {}): Config {
+    const base = this.$baseConfig;
+
+    return {
+      ...base,
+      fontSize: options.fontSize ?? base.fontSize,
+      leading: options.leading ?? base.leading,
+      customFont: options.customFont ?? base.customFont,
+      colors: { ...normalizeColors(base), ...normalizeColors(options) },
+    };
+  }
+
+  /**
+   * Replaces the current document with an empty one. Every render must start here: pdf-lib's
+   * `removePage` only unlinks pages, and `save()` still writes their content streams, so reusing a
+   * document would carry the previous resume's text into the next file.
+   */
+  protected async newDocument() {
+    this.$document = await PDFDocument.create();
+    this.$document.registerFontkit(fontkit);
+    this.$defaultFont = await this.$document.embedFont(StandardFonts.Helvetica);
+    this.$fonts = {};
+    this.$fontFamily = 'Helvetica';
+    this.$pages = [];
+  }
+
+  async init(config: Config = DEFAULT_CONFIG) {
+    this.$baseConfig = { ...DEFAULT_CONFIG, ...config };
+    this.$baseFont = this.$baseConfig.customFont;
+    this.applyConfig(this.$baseConfig);
+
+    await this.newDocument();
+  }
+
+  /**
+   * Starts a new render in a fresh document. `options` apply to this render only; the next call
+   * starts again from the values given to `init()`.
+   */
+  async update(options: RenderOptions = {}) {
     if (!this.$document) throw new Error('Initialise document first');
 
-    if (options.color && options.color !== this.$colors.secondary.toString())
-      this.$colors.secondary = fromHexStr(options.color);
+    const config = this.resolveConfig(options);
+    this.applyConfig(config);
 
-    if (options.fontSize && options.fontSize !== this.$fontScale) this.$fontScale = options.fontSize as Size;
-    if (options.leading && options.leading !== this.$leading) this.$leading = options.leading as Size;
+    await this.newDocument();
 
-    if (options.customFont && options.customFont.name !== this.$fontFamily) {
-      this.$fonts = await this.embedFonts(options.customFont);
-    }
-
-    this.removeAllPages();
+    const font = options.customFont ?? this.$baseFont;
+    if (font) await this.embedFonts(font);
 
     await this.addPage();
+  }
+
+  /** Downloads a font family once and keeps it for later documents. Only the base font and the most recent other font are kept. */
+  protected async loadFonts(customFont: CustomFont): Promise<FontBytes> {
+    const key = fontCacheKey(customFont);
+    const cached = this.$fontCache.get(key);
+    if (cached) return cached;
+
+    const bytes = await fetchCustomFont(customFont.fonts);
+
+    const baseKey = this.$baseFont ? fontCacheKey(this.$baseFont) : undefined;
+    for (const existing of this.$fontCache.keys()) {
+      if (existing !== baseKey) this.$fontCache.delete(existing);
+    }
+    this.$fontCache.set(key, bytes);
+
+    return bytes;
   }
 
   async embedFonts(customFont: CustomFont = defaultFontMap) {
@@ -236,16 +317,12 @@ export class BasePDFService {
 
     const doc = this.$document; // ts workaround to avoid type error
 
-    const customFonts = await fetchCustomFont(customFont.fonts);
-    const promise = customFonts.map(async (font) => {
-      return {
-        [font.type]: await doc.embedFont(font.arrayBuffer),
-      };
-    });
+    const fontBytes = await this.loadFonts(customFont);
+    const embedded = await Promise.all(
+      fontBytes.map(async ({ type, arrayBuffer }) => [type, await doc.embedFont(arrayBuffer)] as const),
+    );
 
-    const customFontsArr = await Promise.all(promise);
-
-    this.$fonts = { ...this.$fonts, ...customFontsArr };
+    this.$fonts = Object.fromEntries(embedded) as Partial<Record<FontType, PDFFont>>;
     this.$fontFamily = customFont.name;
 
     return this.$fonts;
