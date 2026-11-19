@@ -1,306 +1,56 @@
-# pdf-resume
+# talv-pdf
 
-A TypeScript module for generating PDF resumes using [pdf-lib](https://pdf-lib.js.org/) and [@pdf-lib/fontkit](https://pdf-lib.js.org/docs/api/fontkit/). Open source and ready for integration into your projects.
+Source for [`@pdf-tlv/resume`](https://www.npmjs.com/package/@pdf-tlv/resume), a TypeScript library that renders PDF resumes from structured data and a declarative layout template. It is built on [pdf-lib](https://pdf-lib.js.org/) and powers resume export in [Talvio](https://talvio.co).
 
-## Features
-- Generate professional PDF resumes programmatically
-- Uses `pdf-lib` and `@pdf-lib/fontkit` for advanced PDF and font handling
-- Written in TypeScript for type safety and maintainability
+For installation, usage and the template format, see the [package README](packages/resume/README.md).
 
-## Installation
+## Repository layout
 
-```
-yarn add @pdf-tlv/resume
-# or
-npm install @pdf-tlv/resume
-```
-
-## Usage
-
-```typescript
-import { ResumePDFService, ResumeData } from '@pdf-tlv/resume';
-
-export const exampleTemplate: Template = {
-  groups: [
-    {
-      width: 'full',
-      direction: 'horizontal',
-      gap: 'sm',
-      groups: [
-        {
-          width: '1/2',
-          fields: headerFields,
-        },
-        {
-          width: '1/2',
-          fields: contactFields,
-        },
-      ],
-    },
-    {
-      width: 'full',
-      fields: summaryFields,
-    },
-    {
-      width: 'full',
-      separator: 'primary',
-      gap: 'md',
-      fields: [
-        {
-          name: 'skills',
-          source: 'strings',
-          label: {
-            text: 'Skills',
-            fontSize: 'md',
-            color: 'primary',
-            font: 'semibold',
-            maxWidth: 120,
-            direction: 'horizontal',
-          },
-          join: {
-            type: 'join',
-            output: 'text',
-            separator: ', ',
-            width: 500,
-            margins: { bottom: 'md' },
-            item: {
-              fontSize: 'md',
-              color: 'primary',
-              font: 'regular',
-            },
-          },
-          items: [],
-        },
-        {
-          name: 'tools',
-          source: 'strings',
-          label: {
-            text: 'Tools',
-            fontSize: 'md',
-            color: 'primary',
-            font: 'semibold',
-            maxWidth: 120,
-            direction: 'horizontal',
-          },
-          join: {
-            type: 'join',
-            output: 'text',
-            separator: ', ',
-            width: 500,
-            margins: { bottom: 'md' },
-            item: {
-              fontSize: 'md',
-              color: 'primary',
-              font: 'regular',
-            },
-          },
-          items: [],
-        },
-        {
-          name: 'languages',
-          source: 'strings',
-          label: {
-            text: 'Languages',
-            fontSize: 'md',
-            color: 'primary',
-            font: 'semibold',
-            direction: 'horizontal',
-            maxWidth: 120,
-          },
-          join: {
-            type: 'join',
-            output: 'text',
-            separator: ', ',
-            width: 500,
-            margins: { bottom: 'md' },
-            item: {
-              fontSize: 'md',
-              color: 'primary',
-              font: 'regular',
-            },
-          },
-          items: [],
-        },
-      ],
-    },
-    {
-      width: 'full',
-      separator: 'primary',
-      gap: 'md',
-      label: {
-        text: 'Experience',
-        fontSize: 'lg',
-        color: 'primary',
-        font: 'semibold',
-        direction: 'horizontal',
-        maxWidth: 120,
-      },
-      fields: [
-  {
-    name: 'experience',
-    source: 'objects',
-    items: [
-      {
-        type: 'row',
-        keys: ['jobTitle', 'dateRange'],
-        item: {
-          texts: {
-            jobTitle: {
-              fontSize: 'md',
-              color: 'secondary',
-              maxWidth: 200,
-              font: 'semibold',
-            },
-            dateRange: {
-              fontSize: 'md',
-              color: 'primary',
-              maxWidth: 200,
-              font: 'regular',
-            },
-          },
-          justify: 'between',
-          containerWidth: 400,
-        },
-      },
-      {
-        type: 'row',
-        keys: ['company', 'locationType'],
-        item: {
-              texts: {
-                company: {
-                  fontSize: 'md',
-                  color: 'primary',
-                  maxWidth: 200,
-                  font: 'regular',
-                },
-                locationType: {
-                  fontSize: 'md',
-                  color: 'primary',
-                  maxWidth: 200,
-                  font: 'regular',
-                },
-              },
-              justify: 'between',
-              containerWidth: 400,
-            },
-          },
-          {
-            name: 'description',
-            margins: { top: 'sm' },
-            type: 'content',
-          },
-        ],
-      },
-    ],
-    },
-    {
-      width: 'full',
-      separator: 'primary',
-      label: {
-        text: 'Education',
-        fontSize: 'lg',
-        color: 'primary',
-        font: 'semibold',
-        direction: 'horizontal',
-        maxWidth: 120,
-      },
-      gap: 'md',
-      fields: educationFields,
-    },
-    {
-      width: 'full',
-      separator: 'primary',
-      label: {
-        text: 'Projects',
-        fontSize: 'lg',
-        color: 'primary',
-        font: 'semibold',
-        direction: 'horizontal',
-        maxWidth: 120,
-      },
-      fields: projectsFields,
-    },
-    {
-      width: 'full',
-      separator: 'primary',
-      label: {
-        text: 'References',
-        fontSize: 'lg',
-        color: 'primary',
-        font: 'semibold',
-        direction: 'horizontal',
-        maxWidth: 120,
-      },
-      fields: recommendationsFields,
-    },
-  ],
-};
-
-const resumeData: ResumeData = {
-    name: 'John Doe,
-    role: 'Software engineer,
-    description: 'Personal Summary',
-    phone: '+1 77 XXXXX XXXX',
-    email: 'johndoe@gmail.com',
-    primaryProfile: 'https://linkedin.com/in',
-    skills: ['Javascript', 'Typescript', 'C#'],
-    tools: ['Figma', 'Slack', 'Chatgpt'],
-    links: [{ url: 'https://portfolio.co' }],
-    recommendations: [{
-      recommendeeName: 'Jane Doe',
-      url: 'https://talvio.co/janedoe',
-      formattedUrl: 'talvio.co/janedoe',
-      description: { type: 'doc', content: [] }, // tipat content
-    }],
-    experience: [{
-      locationType: 'Remote',
-      jobTitle: 'Jenitor',
-      dateRange: `Jun 2024 - May 2025`,
-      company: 'Talvio',
-      employmentType: 'Contract',
-      companyWithEmploymentType: 'Talvio • Contract',
-      description: { type: 'doc', content: [] }, // tipat content
-    }],
-    education: data.education?.map((education) => ({
-      school: 'Harward',
-      degree: 'Bachelors Degree',
-      description: { type: 'doc', content: [] }, // tipat content
-      dateRangeShort: `2011 - 2017`,
-      dateRange: `Sep 2011 - Jun 2017`,
-    })),
-    projects: data.projects?.map((project) => ({
-      projectName: 'Pdf-tlv',
-      url: 'https://www.npmjs.com/package/@pdf-tlv/resume',
-      formattedUrl: 'npmjs.com/package/@pdf-tlv/resume',
-      description: { type: 'doc', content: [] },
-    })),
-    location: 'New York, USA',
-    languages: [ 'English - Proficient', 'Spanish - Native' ],
-  };
-
-const pdfService = new ResumePDFService();
-await pdfService.create({
-        fonts: ['regular', 'semibold', 'bold', 'italic', 'bold-italic'],
-        screen: {
-          width: 555,
-          height: 800,
-          paddingX: 20,
-          paddingY: 20,
-        },
-        color, // hex color
-        fontSize,
-        leading: 'md',
-        isPreview,
-      });
-const pdfBytes = await pdfService.generate(resumeData, exampleTemplate);
-// Save or send pdfBytes (Uint8Array)
-```
+| Path | Contents |
+| --- | --- |
+| `packages/resume/` | The published package. |
+| `packages/resume/templates/` | Built-in templates: `talvio`, `ember` and `mint`. |
+| `packages/resume/types/` | Public types for resume data and templates. |
+| `debt.md` | Known technical debt and its workarounds. |
+| `src/` | Re-exports the package for local use. |
 
 ## Development
 
-- Clone the repo
-- Run `yarn install` to install dependencies
-- Build with `yarn build`
+The repo is a Yarn 4 workspace. You need Node.js 18 or later, because the library loads fonts with the global `fetch`.
+
+```sh
+yarn install
+cd packages/resume
+yarn build
+```
+
+Run the unit tests from `packages/resume`:
+
+```sh
+yarn jest --rootDir . --preset ts-jest --testPathIgnorePatterns /dist/
+```
+
+## Releasing
+
+Releases are published by GitHub Actions ([`.github/workflows/publish.yml`](.github/workflows/publish.yml)) when a pull request is merged into `main`.
+
+1. In your PR, bump `version` in `packages/resume/package.json`.
+2. Merge the PR. The workflow builds the package, runs the tests, publishes to npm with provenance, and pushes a `v<version>` tag.
+
+If the version in `package.json` is already on npm, the workflow builds and tests but publishes nothing. You can also start it by hand from the Actions tab.
+
+`yarn build` deletes `dist` before compiling, so files from deleted sources are never published. Test files (`*.spec.ts`) are excluded from the build.
+
+### One-time npm setup
+
+The workflow uses npm trusted publishing, so no npm token is stored in GitHub. On npmjs.com, open the `@pdf-tlv/resume` package settings and add a trusted publisher:
+
+| Field | Value |
+| --- | --- |
+| Publisher | GitHub Actions |
+| Organization or user | `mdivani` |
+| Repository | `talv-pdf` |
+| Workflow filename | `publish.yml` |
 
 ## License
 

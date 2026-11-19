@@ -115,6 +115,8 @@ export type FormattedExperience = {
   companyWithEmploymentType: string;
   company: string;
   employmentType?: string;
+  /** Work arrangement shown next to the company by the built-in templates, for example `'Remote'`. */
+  locationType?: string;
   jobTitle: string;
   description?: Content;
   dateRange: string;
@@ -126,6 +128,8 @@ export type FormattedEducation = {
   degree: string;
   description?: Content;
   dateRange: string;
+  /** Compact date shown by the built-in templates, for example `'2017 - 2021'`. No date is shown when it is missing. */
+  dateRangeShort?: string;
   kind: 'education';
 };
 
