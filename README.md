@@ -32,11 +32,25 @@ yarn jest --rootDir . --preset ts-jest --testPathIgnorePatterns /dist/
 
 ## Releasing
 
-1. Update `version` in `packages/resume/package.json`.
-2. Log in to npm with `yarn npm login` if you haven't already.
-3. From `packages/resume`, run `yarn run publish`. It builds the package and publishes it publicly.
+Releases are published by GitHub Actions ([`.github/workflows/publish.yml`](.github/workflows/publish.yml)) when a pull request is merged into `main`.
+
+1. In your PR, bump `version` in `packages/resume/package.json`.
+2. Merge the PR. The workflow builds the package, runs the tests, publishes to npm with provenance, and pushes a `v<version>` tag.
+
+If the version in `package.json` is already on npm, the workflow builds and tests but publishes nothing. You can also start it by hand from the Actions tab.
 
 `yarn build` deletes `dist` before compiling, so files from deleted sources are never published. Test files (`*.spec.ts`) are excluded from the build.
+
+### One-time npm setup
+
+The workflow uses npm trusted publishing, so no npm token is stored in GitHub. On npmjs.com, open the `@pdf-tlv/resume` package settings and add a trusted publisher:
+
+| Field | Value |
+| --- | --- |
+| Publisher | GitHub Actions |
+| Organization or user | `mdivani` |
+| Repository | `talv-pdf` |
+| Workflow filename | `publish.yml` |
 
 ## License
 

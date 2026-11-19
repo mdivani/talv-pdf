@@ -1,0 +1,80 @@
+name: Publish @pdf-tlv/resume
+
+# Runs when a PR is merged into main (a merge is a push to main).
+# Publishes only if the version in packages/resume/package.json is not on npm yet,
+# so merges that don't bump the version build and test but publish nothing.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'packages/resume/**'
+      - 'yarn.lock'
+      - '.github/workflows/publish.yml'
+  workflow_dispatch:
+
+# Never run two publishes at once.
+concurrency:
+  group: publish-resume
+  cancel-in-progress: false
+
+permissions:
+  contents: write # push the release tag
+  id-token: write # npm trusted publishing (OIDC), no npm token needed
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/resume
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+
+      # Trusted publishing needs npm 11.5.1 or later.
+      - name: Update npm
+        run: npm install -g npm@^11.5.1
+
+      - name: Enable Yarn
+        run: corepack enable
+
+      - name: Install dependencies
+        run: yarn install --immutable
+
+      - name: Check whether this version is already published
+        id: version
+        run: |
+          NAME=$(node -p "require('./package.json').name")
+          VERSION=$(node -p "require('./package.json').version")
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          if npm view "$NAME@$VERSION" version >/dev/null 2>&1; then
+            echo "$NAME@$VERSION is already on npm. Skipping publish."
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "Publishing $NAME@$VERSION."
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build
+        run: yarn build
+
+      - name: Test
+        run: yarn jest --rootDir . --preset ts-jest --testPathIgnorePatterns /dist/
+
+      # --ignore-scripts: the package has a script named "publish", which npm would
+      # otherwise run as a lifecycle hook and try to publish a second time.
+      # The build already ran above.
+      - name: Publish to npm
+        if: steps.version.outputs.publish == 'true'
+        run: npm publish --access public --provenance --ignore-scripts
+
+      - name: Tag the release
+        if: steps.version.outputs.publish == 'true'
+        run: |
+          TAG="v${{ steps.version.outputs.version }}"
+          git tag "$TAG"
+          git push origin "$TAG"
