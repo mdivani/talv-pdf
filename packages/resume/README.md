@@ -199,15 +199,27 @@ The built-in templates show `locationType` on an experience entry, such as `'Rem
 
 ### Rich text
 
-`description` on experience, education, projects and recommendations is a rich text document in [TipTap](https://tiptap.dev/) / ProseMirror JSON format. The renderer supports paragraphs and bullet lists.
+`description` on experience, education, projects and recommendations is a rich text document in [TipTap](https://tiptap.dev/) / ProseMirror JSON format. The renderer supports:
 
-Keep each paragraph or list item to a single text run. Inline formatting such as bold or italic splits a paragraph into several runs, and the renderer can drop the later runs.
+- paragraphs, including inline `bold` and `italic` marks, which can be mixed within a line
+- bullet lists, including nested lists
+- hard breaks (`hardBreak`, Shift+Enter in the editor), which start a new line
+- empty paragraphs between two others, which leave a blank line (leading and trailing ones are ignored)
+
+Other marks, such as links or underline, are drawn as plain text.
 
 ```ts
 const description = {
   type: 'doc',
   content: [
-    { type: 'paragraph', content: [{ type: 'text', text: 'Led the platform migration with zero downtime.' }] },
+    {
+      type: 'paragraph',
+      content: [
+        { type: 'text', text: 'Led the platform migration with ' },
+        { type: 'text', text: 'zero downtime', marks: [{ type: 'bold' }] },
+        { type: 'text', text: '.' },
+      ],
+    },
     {
       type: 'bulletList',
       content: [

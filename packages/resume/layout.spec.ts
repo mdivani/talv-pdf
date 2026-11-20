@@ -2,7 +2,7 @@ import { PDFFont, PDFPage } from 'pdf-lib';
 import { ResumePDFService } from './resume-pdf.service';
 import * as templates from './templates';
 import { fixtures } from './fixtures';
-import type { Size, Template } from './types';
+import type { Content, Size, Template } from './types';
 
 /**
  * Layout checks over every built-in template, fixture and font size. Each render records where
@@ -142,6 +142,35 @@ function orphanHeadings(boxes: Box[], fixture: string, pageCount: number) {
     .map((box) => `page ${box.page + 1} ends with "${box.text}"`);
 }
 
+/** Text of every text node in a rich-text document, in order. */
+function richTextRuns(content?: Content): string[] {
+  if (!content) return [];
+  return [
+    ...(content.text ? [content.text] : []),
+    ...(content.content ?? []).flatMap(richTextRuns),
+  ];
+}
+
+/**
+ * Words of rich-text descriptions that never get drawn. Lines are joined in drawing order without
+ * spaces, so a word broken across lines still counts. Words the standard fonts can't encode (drawn
+ * as `?`) are skipped.
+ */
+function missingRichTextWords(boxes: Box[], fixture: string) {
+  const data = fixtures[fixture];
+  const drawn = boxes.map((box) => box.text.replace(/\s+/g, '')).join('');
+  // Education descriptions are left out: no built-in template shows them.
+  const descriptions = [
+    ...(data.experience ?? []),
+    ...(data.projects ?? []),
+    ...(data.recommendations ?? []),
+  ].flatMap((entry) => richTextRuns(entry.description));
+  return descriptions
+    .flatMap((run) => run.split(/\s+/))
+    .filter((word) => word && /^[\x20-\x7E\u00A0-\u00FF\u2013-\u2026]+$/.test(word))
+    .filter((word) => !drawn.includes(word));
+}
+
 /** An icon belongs to the text drawn just to its right on the same line. */
 function orphanIcons(icons: Icon[], boxes: Box[]) {
   return icons
@@ -205,6 +234,10 @@ describe.each([...cases, ...pageBreakCases])(
       expect(offPageHorizontally(result.boxes)).toEqual([]);
     });
 
+    it('draws every word of rich-text descriptions', () => {
+      expect(missingRichTextWords(result.boxes, fixture)).toEqual([]);
+    });
+
     it('keeps entry headings with their content', () => {
       expect(orphanHeadings(result.boxes, fixture, result.pageCount)).toEqual([]);
     });
@@ -226,4 +259,35 @@ describe.each(templateEntries)('%s rows that fit', (_, template) => {
       expect(dates.filter((date) => !drawn.has(date))).toEqual([]);
     },
   );
+});
+
+// Rich text: runs in different fonts share lines, and an empty paragraph between two others leaves
+// a blank line, as in the editor.
+describe.each(templateEntries)('%s rich text', (_, template) => {
+  let boxes: Box[];
+
+  beforeAll(async () => {
+    ({ boxes } = await renderAndRecord(template, 'richText', 'md'));
+  });
+
+  const lineOf = (start: string) => {
+    const box = boxes.find((b) => b.text.trim().startsWith(start));
+    if (!box) throw new Error(`"${start}" was not drawn`);
+    return box;
+  };
+
+  it('draws a mixed-font paragraph on one line', () => {
+    const before = lineOf('Mixed runs:');
+    const bold = lineOf('this part is bold');
+    const after = lineOf('and this part is regular again.');
+    expect([bold.y0, after.y0]).toEqual([before.y0, before.y0]);
+    expect(before.x1).toBeLessThanOrEqual(bold.x0 + 0.5);
+    expect(bold.x1).toBeLessThanOrEqual(after.x0 + 0.5);
+  });
+
+  it('leaves a blank line for an empty paragraph', () => {
+    const lineGap = lineOf('Single run, regular.').y0 - lineOf('Single run, bold.').y0;
+    const gap = lineOf('Mixed runs:').y0 - lineOf('Paragraph after an empty paragraph.').y0;
+    expect(gap).toBeCloseTo(2 * lineGap, 0);
+  });
 });
