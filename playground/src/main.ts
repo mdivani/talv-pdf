@@ -1,6 +1,7 @@
 import {
   getDocument,
   GlobalWorkerOptions,
+  PDFWorker,
   type PDFDocumentLoadingTask,
 } from 'pdfjs-dist/legacy/build/pdf.mjs';
 import workerSrc from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?url';
@@ -8,6 +9,18 @@ import type { ResumeData, Size, Template } from '@resume/types';
 import * as initialRegistry from './registry';
 
 GlobalWorkerOptions.workerSrc = workerSrc;
+
+/**
+ * One pdf.js worker for the whole session. Without it pdf.js starts a worker per document and
+ * downloads the worker script each time, so a tab whose dev server has stopped fails on its next
+ * render ("Setting up fake worker failed"). pdf.js leaves a worker it was handed running when a
+ * document is destroyed.
+ */
+let pdfWorker: PDFWorker | null = null;
+const sharedWorker = () => {
+  if (!pdfWorker || pdfWorker.destroyed) pdfWorker = new PDFWorker();
+  return pdfWorker;
+};
 
 type Mode = 'single' | 'fixtures' | 'templates';
 type Font = 'standard' | 'inter';
@@ -229,7 +242,7 @@ async function render() {
 /** Parses a result's PDF once and keeps it, so zoom changes only re-rasterise. */
 function openDoc(result: Result, bytes: Uint8Array) {
   // pdf.js takes ownership of the buffer it is given, so hand it a copy and keep the original for downloads.
-  result.task ??= getDocument({ data: bytes.slice() });
+  result.task ??= getDocument({ data: bytes.slice(), worker: sharedWorker() });
   return result.task.promise;
 }
 
