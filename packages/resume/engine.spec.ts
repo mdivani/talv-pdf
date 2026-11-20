@@ -734,6 +734,78 @@ describe('page breaks', () => {
   });
 });
 
+describe('field labels and headings', () => {
+  it('starts the next field below a field label that is longer than its content', async () => {
+    const field = (name: string, value: string): Field<ItemStyle> => ({
+      name,
+      source: 'root',
+      label: label(value, { column: 40, fontSize: 'md' }),
+      items: [text(name)],
+    });
+    const template: Template = {
+      groups: [
+        section('contact', [field('email', 'Electronic mail address'), field('phone', 'Phone')], {
+          gap: 'sm',
+        }),
+      ],
+    };
+    const { texts } = await record(template, mid);
+    const labelLines = texts.filter((t) => t.x === page.padding && t.text.trim() !== 'Phone');
+    expect(labelLines.length).toBeGreaterThan(1);
+    const phoneLabel = textOf(texts, 'Phone');
+    expect(phoneLabel.y).toBeLessThan(Math.min(...labelLines.map((t) => t.y)) - 5);
+  });
+
+  it('keeps a heading of several items with the start of the entry', async () => {
+    const template: Template = {
+      groups: [
+        section('experience', [
+          experience({
+            headingItems: 2,
+            items: [
+              {
+                type: 'row',
+                keys: ['company', 'locationType'],
+                item: {
+                  justify: 'between',
+                  containerWidth: 0,
+                  texts: { company: style({ font: 'bold' }), locationType: style() },
+                },
+              },
+              {
+                type: 'row',
+                keys: ['jobTitle', 'dateRange'],
+                item: {
+                  justify: 'between',
+                  containerWidth: 0,
+                  texts: { jobTitle: style({ font: 'italic' }), dateRange: style() },
+                },
+              },
+              { type: 'content', name: 'description', margins: { top: 'sm' } },
+            ],
+          }),
+        ]),
+      ],
+    };
+    const sizes = ['lg', 'xl'] as const;
+    const leadings = ['sm', 'md', 'lg', 'xl'] as const;
+    for (const [fontSize, leading] of sizes.flatMap((size) =>
+      leadings.map((l) => [size, l] as const),
+    )) {
+      const { texts, pageCount } = await record(template, multiPage, {
+        fontSize,
+        options: { leading },
+      });
+      expect(pageCount).toBeGreaterThan(1);
+      for (const entry of multiPage.experience ?? []) {
+        // Every title shares a page with the line drawn after it.
+        const index = texts.findIndex((t) => t.text === entry.jobTitle);
+        expect(texts[index + 2]?.page ?? texts[index].page).toBe(texts[index].page);
+      }
+    }
+  });
+});
+
 describe('entries side by side', () => {
   const achievements = (count: number): ResumeData => ({
     ...mid,

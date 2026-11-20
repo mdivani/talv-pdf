@@ -403,7 +403,7 @@ A field's `source` decides where its data comes from:
 - `'objects'` reads the array named by the field's `name`, such as `experience`. The items are repeated for every entry, and each item reads a key of that entry.
 - `'strings'` reads a string array such as `skills`, and draws its single item once per string.
 
-A field can also take its own `label`, `separator` and `gap`, which work as they do on groups.
+A field can also take its own `label`, `separator` and `gap`, which work as they do on groups. A field label with `column` puts the label beside the field's values; the next field starts below whichever is longer.
 
 Add `join` to a field to merge a list into one line instead, for example to show skills separated by commas. Set `output: 'row'` to lay the values out as a row instead of one text, and add `chip` to draw each value in a small box.
 
@@ -414,6 +414,7 @@ Fields reading a list (`source: 'objects'`) can also take:
 | `columns`               | Lay the entries out side by side, this many to a row. Boxes in a row are as tall as the tallest, and a row is never split across pages.                                                                                                                 |
 | `aside`                 | `{ name, width, gap?, rule? }`. Puts the item called `name` (such as `dateRange`) in a column of `width` points on the left, with the other items beside it. With `rule`, a vertical line with a marker per entry runs between the columns: a timeline. |
 | `background`, `padding` | A box behind each entry. A border on one side only draws a bar or a rule, such as `{ border: { color: 'neutral', sides: ['bottom'] } }` under each row of a table.                                                                                      |
+| `headingItems`          | How many items at the start of each entry form its heading, such as a company row then a title row. The heading moves to the next page with the first lines of what follows rather than end a page. Defaults to 1.                                      |
 | `when`, `unless`        | As on groups.                                                                                                                                                                                                                                           |
 
 ### Items

@@ -213,6 +213,12 @@ export interface Field<T extends TemplateItem> extends Condition {
   columns?: number;
   /** Put one item of each entry in a column on the left. */
   aside?: Aside;
+  /**
+   * How many items at the start of each entry form its heading, such as a company row and a title
+   * row. The heading moves to the next page with the first lines of what follows rather than end a
+   * page. Defaults to 1.
+   */
+  headingItems?: number;
   /** A box behind each entry. */
   background?: Background;
   /** Space between each entry's box and its content. */

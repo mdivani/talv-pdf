@@ -178,26 +178,41 @@ export class ResumePDFService extends ContentToPdfService {
 
     for (const item of field.items ?? []) {
       if (!hasText(item)) continue;
-      height += this.spacing(item.margins?.top) + this.spacing(item.margins?.bottom);
-      if (item.type === 'text') {
-        const { text, fontSize, font = 'regular', family, leading, icon, bullet } = item.item;
-        const lines = this.getTextLines({
-          text,
-          size: fontSize,
-          font: this.getFont(font, family),
-          leading: leading || this.$leading,
-          maxWidth:
-            Math.min(item.item.maxWidth || inner, inner) -
-            this.prefixWidth({ text, icon, bullet, fontSize }),
-        });
-        height += lines.length * this.lineHeight(this.fontSize(fontSize), leading);
-      } else {
-        height += 2 * this.lineHeight(this.fontSize('md'));
-      }
+      height += this.itemHeight(item, inner);
       count++;
     }
 
     return height + Math.max(count - 1, 0) * space;
+  }
+
+  /**
+   * Height of one item drawn at `width`, margins included. Text is measured; a row counts as one
+   * line of its largest text, and rich text as two lines.
+   */
+  protected itemHeight(item: Item, width: number) {
+    let height = this.spacing(item.margins?.top) + this.spacing(item.margins?.bottom);
+    if (item.type === 'text') {
+      const { text, fontSize, font = 'regular', family, leading, icon, bullet } = item.item;
+      const lines = this.getTextLines({
+        text,
+        size: fontSize,
+        font: this.getFont(font, family),
+        leading: leading || this.$leading,
+        maxWidth:
+          Math.min(item.item.maxWidth || width, width) -
+          this.prefixWidth({ text, icon, bullet, fontSize }),
+      });
+      height += lines.length * this.lineHeight(this.fontSize(fontSize), leading);
+    } else if (item.type === 'row') {
+      height += Math.max(
+        ...item.item.texts.map((value) =>
+          this.lineHeight(this.fontSize(value.fontSize), value.leading),
+        ),
+      );
+    } else {
+      height += 2 * this.lineHeight(this.fontSize('md'));
+    }
+    return height;
   }
 
   /** True when a box this tall fits on a page but not in the room left below `y`. */
@@ -551,6 +566,8 @@ export class ResumePDFService extends ContentToPdfService {
     currentY -= pad.y;
     currentX += pad.x;
     currentMaxWidth -= 2 * pad.x;
+    // Where a label in a column of its own ends, when it is longer than the content beside it.
+    let labelBottom: Position | undefined;
 
     if (filled) {
       currentY = this.drawSeparator({
@@ -575,6 +592,7 @@ export class ResumePDFService extends ContentToPdfService {
       currentX = labelResult.currentX;
       currentPageIndex = labelResult.pageIndex;
       currentMaxWidth = labelResult.width;
+      labelBottom = labelResult.bottom;
     }
 
     let marker: Marker | undefined;
@@ -632,6 +650,15 @@ export class ResumePDFService extends ContentToPdfService {
       // follows fit too.
       const rest = asideItem ? items.filter((item) => item !== asideItem) : items;
       const head = field.source === 'objects' && rest.length > 1 ? rest.findIndex(hasText) : -1;
+      // With `headingItems`, the items after the first that belong to the heading come along too.
+      const headingRest =
+        head < 0
+          ? 0
+          : rest
+              .slice(head + 1)
+              .filter(hasText)
+              .slice(0, Math.max((field.headingItems ?? 1) - 1, 0))
+              .reduce((sum, item) => sum + space + this.itemHeight(item, itemWidth), 0);
 
       for (const [index, item] of rest.entries()) {
         // A missing optional value (no description, say) takes no space: no margins, no gap.
@@ -648,7 +675,7 @@ export class ResumePDFService extends ContentToPdfService {
           x: itemX,
           pageIndex: currentPageIndex,
           maxWidth: itemWidth,
-          keepWithNext: index === head ? this.entryHeadHeight(item, itemWidth) : 0,
+          keepWithNext: index === head ? this.entryHeadHeight(item, itemWidth) + headingRest : 0,
         });
 
         currentY = result.currentY - this.spacing(bottom) - space;
@@ -662,6 +689,13 @@ export class ResumePDFService extends ContentToPdfService {
         currentPageIndex = asideEnd.pageIndex;
         wroteItems = true;
       }
+    }
+
+    const afterLabel = labelBottom && { ...labelBottom, y: labelBottom.y - space };
+    if (afterLabel && isFurther(afterLabel, { y: currentY, pageIndex: currentPageIndex })) {
+      currentY = afterLabel.y;
+      currentPageIndex = afterLabel.pageIndex;
+      wroteItems = true;
     }
 
     if (boxed) {
