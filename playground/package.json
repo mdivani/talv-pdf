@@ -1,0 +1,15 @@
+{
+  "name": "@pdf-tlv/playground",
+  "private": true,
+  "type": "module",
+  "description": "Live preview for @pdf-tlv/resume templates. Not published.",
+  "scripts": {
+    "dev": "vite",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "pdfjs-dist": "6.5.438",
+    "typescript": "5.8.3",
+    "vite": "8.3.8"
+  }
+}

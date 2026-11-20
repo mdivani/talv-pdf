@@ -3,10 +3,27 @@ import { Template, Group, Item, Field, Coords, Size, LabelItem, SeparatorVariant
 import { ContentToPdfService } from './content-to-pdf.service';
 import { Config, DEFAULT_CONFIG, RenderOptions } from './pdf.service';
 import { getWidth, mapDataToTemplate, hasContent, hasText } from './utils';
-import { defaultFontMap } from './assets';
 export { formatTextWithAffixes, getWidth, mapDataToTemplate } from './utils';
 
 type CreateParams = Partial<Config>;
+
+/** Copies plain data (objects, arrays, strings), passing every string through `fn`. */
+function mapStrings<T>(value: T, fn: (text: string) => string): T {
+  if (typeof value === 'string') return fn(value) as T;
+  if (Array.isArray(value)) return value.map((item) => mapStrings(item, fn)) as T;
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, item]) => [key, mapStrings(item, fn)]),
+    ) as T;
+  }
+  return value;
+}
+
+type Position = { y: number; pageIndex: number };
+
+/** True when `a` is further down the document than `b`: on a later page, or lower on the same page. */
+const isFurther = (a: Position, b: Position) =>
+  a.pageIndex > b.pageIndex || (a.pageIndex === b.pageIndex && a.y < b.y);
 
 type GenerateParams = {
   data: ResumeData;
@@ -31,11 +48,22 @@ export class ResumePDFService extends ContentToPdfService {
     colors,
     isPreview = DEFAULT_CONFIG.isPreview,
     watermark,
-    customFont = defaultFontMap,
+    customFont,
   }: CreateParams = DEFAULT_CONFIG) {
-    await super.init({ screen, fontSize, leading, color, colors, isPreview, watermark, customFont });
+    await super.init({
+      screen,
+      fontSize,
+      leading,
+      color,
+      colors,
+      isPreview,
+      watermark,
+      customFont,
+    });
 
-    this.$fonts = await super.embedFonts(customFont);
+    // Download a custom font now so the first render doesn't wait for it. Only the bytes are cached:
+    // each render embeds them into its own document. Without a custom font, nothing is fetched.
+    if (customFont) await this.loadFonts(customFont);
 
     this.$ready = true;
   }
@@ -52,7 +80,13 @@ export class ResumePDFService extends ContentToPdfService {
     const render = this.$queue.then(async () => {
       await this.update(options);
 
-      const fields = mapDataToTemplate(data, template);
+      // With the standard fonts, characters they can't encode are replaced before layout, so text is
+      // measured and drawn the same way. Template strings (labels, separators) go through it too.
+      const encodable = (text: string) => this.encodable(text);
+      const fields = mapDataToTemplate(
+        mapStrings(data, encodable),
+        mapStrings(template, encodable),
+      );
 
       await this.writeToPDF(fields.groups);
 
@@ -83,7 +117,12 @@ export class ResumePDFService extends ContentToPdfService {
 
   async writeGroup(
     group: Group<Item>,
-    { y, x, containerWidth = this.$maxWidth, pageIndex }: Coords & { containerWidth?: number; pageIndex: number },
+    {
+      y,
+      x,
+      containerWidth = this.$maxWidth,
+      pageIndex,
+    }: Coords & { containerWidth?: number; pageIndex: number },
   ): Promise<{ currentY: number; currentX: number; width: number; pageIndex: number }> {
     let currentY = y;
     let currentX = x;
@@ -120,20 +159,35 @@ export class ResumePDFService extends ContentToPdfService {
     }
 
     if (groups) {
-      const horizontalY = currentY;
+      const horizontal = direction === 'horizontal';
+      // Columns side by side all start where the group's content starts.
+      const start = { y: currentY, pageIndex: currentPageIndex };
+      // Where the group ends: the furthest point any sub-group reached.
+      let end = { ...start };
 
       for (const subGroup of groups) {
+        const from = horizontal ? start : { y: currentY, pageIndex: currentPageIndex };
         const result = await this.writeGroup(subGroup, {
-          y: direction === 'horizontal' ? horizontalY : currentY,
+          y: from.y,
           x: currentX,
-          containerWidth: maxWidth - (direction === 'horizontal' ? space : 0),
-          pageIndex: direction === 'horizontal' ? pageIndex : currentPageIndex,
+          containerWidth: maxWidth - (horizontal ? space : 0),
+          pageIndex: from.pageIndex,
         });
 
-        currentY = currentY > result.currentY ? result.currentY - space : currentY;
-        currentX = direction === 'horizontal' ? result.width + space : result.currentX;
-        currentPageIndex = result.pageIndex;
+        // A sub-group that drew nothing leaves the position where it was, without adding the gap.
+        const drewSomething = result.pageIndex !== from.pageIndex || result.currentY !== from.y;
+        const reached = { y: result.currentY - space, pageIndex: result.pageIndex };
+        if (drewSomething && isFurther(reached, end)) end = reached;
+
+        if (!horizontal) {
+          currentY = end.y;
+          currentPageIndex = end.pageIndex;
+        }
+        currentX = horizontal ? result.width + space : result.currentX;
       }
+
+      currentY = end.y;
+      currentPageIndex = end.pageIndex;
     }
 
     if (fields) {
@@ -152,7 +206,10 @@ export class ResumePDFService extends ContentToPdfService {
     return { currentY, currentX, width: maxWidth + this.$paddingX, pageIndex: currentPageIndex };
   }
 
-  async writeField(field: Field<Item>, { y, x, pageIndex }: { y: number; x: number; pageIndex: number }) {
+  async writeField(
+    field: Field<Item>,
+    { y, x, pageIndex }: { y: number; x: number; pageIndex: number },
+  ) {
     const { items, gap, maxWidth = this.$maxWidth, label, separator } = field;
 
     let currentY = y;
@@ -188,7 +245,15 @@ export class ResumePDFService extends ContentToPdfService {
     }
 
     if (items?.length) {
-      for (const item of items) {
+      // An entry (one object of a list, such as a job) keeps its heading with the start of its
+      // content: its first line only goes on this page if the rest of it and a little of what
+      // follows fit too.
+      const head = field.source === 'objects' && items.length > 1 ? items.findIndex(hasText) : -1;
+
+      for (const [index, item] of items.entries()) {
+        // A missing optional value (no description, say) takes no space: no margins, no gap.
+        if (!hasText(item)) continue;
+
         const { top, bottom } = item.margins || {};
 
         if (top) {
@@ -200,6 +265,7 @@ export class ResumePDFService extends ContentToPdfService {
           x: currentX,
           pageIndex: currentPageIndex,
           maxWidth: currentMaxWidth,
+          keepWithNext: index === head ? this.entryHeadHeight(item, currentMaxWidth) : 0,
         });
 
         currentY = result.currentY - this.spacing(bottom) - space;
@@ -211,7 +277,37 @@ export class ResumePDFService extends ContentToPdfService {
     return { currentY, currentX: x, pageIndex: currentPageIndex };
   }
 
-  async writeItem(item: Item, { y, x, pageIndex, maxWidth }: Coords & { pageIndex: number; maxWidth: number }) {
+  /**
+   * Room an entry's heading needs below its first line: the heading's remaining lines plus two lines
+   * of the entry's content.
+   */
+  entryHeadHeight(item: Item, maxWidth: number) {
+    const content = 2 * this.lineHeight(this.fontSize('md'));
+    if (item.type !== 'text') return content;
+
+    const { text, fontSize, font = 'regular', leading, icon } = item.item;
+    const lines = this.getTextLines({
+      text,
+      size: fontSize,
+      font: this.getFont(font),
+      leading: leading || this.$leading,
+      maxWidth:
+        Math.min(item.item.maxWidth || maxWidth, maxWidth) -
+        this.prefixWidth({ text, icon, fontSize }),
+    });
+    return (lines.length - 1) * this.lineHeight(this.fontSize(fontSize), leading) + content;
+  }
+
+  async writeItem(
+    item: Item,
+    {
+      y,
+      x,
+      pageIndex,
+      maxWidth,
+      keepWithNext = 0,
+    }: Coords & { pageIndex: number; maxWidth: number; keepWithNext?: number },
+  ) {
     let currentY = y;
     let currentX = x;
     let currentPageIndex = pageIndex;
@@ -232,8 +328,10 @@ export class ResumePDFService extends ContentToPdfService {
     if (item.type === 'text') {
       const result = await this.writeMultiLine({
         ...item.item,
-        maxWidth: item.item.maxWidth || maxWidth,
+        // A template's maxWidth can narrow a text item, never widen it past its column.
+        maxWidth: Math.min(item.item.maxWidth || maxWidth, maxWidth),
         font: item.item.font || 'regular',
+        offset: Math.max(item.item.offset ?? 0, keepWithNext),
         pageIndex: currentPageIndex,
         y: currentY,
         x: currentX,
@@ -268,8 +366,9 @@ export class ResumePDFService extends ContentToPdfService {
         containerWidth: maxWidth,
         y: currentY,
         x: currentX,
-        texts: item.item.texts.map((text) => ({
+        texts: item.item.texts.map((text, index) => ({
           ...text,
+          offset: index === 0 ? Math.max(text.offset ?? 0, keepWithNext) : text.offset,
           font: text.font || 'regular',
           pageIndex: currentPageIndex,
           y: currentY,
@@ -317,12 +416,15 @@ export class ResumePDFService extends ContentToPdfService {
         offset: 70,
       });
 
-      const labelWidth = label.maxWidth || result.width;
+      // A horizontal label's value starts at `label.maxWidth` from the page edge, the column the
+      // template lines values up on, or right after the label if the label is wider than that.
+      const valueX = Math.max(label.maxWidth || 0, currentX + result.width + this.spacing('sm'));
 
       currentY = result.pageIndex === currentPageIndex ? currentY : result.nextY + result.height;
       currentY = label.direction === 'horizontal' ? currentY : result.nextY - this.spacing(bottom);
-      currentX = label.direction === 'horizontal' ? labelWidth : currentX;
-      currentMaxWidth = label.direction === 'horizontal' ? currentMaxWidth - labelWidth : currentMaxWidth;
+      currentMaxWidth =
+        label.direction === 'horizontal' ? currentMaxWidth - valueX : currentMaxWidth;
+      currentX = label.direction === 'horizontal' ? valueX : currentX;
       currentPageIndex = result.pageIndex;
     }
 

@@ -4,3 +4,4 @@ export * from './pdf.service';
 export * from './utils';
 export * from './templates';
 export * from './types';
+export { interFont } from './assets';

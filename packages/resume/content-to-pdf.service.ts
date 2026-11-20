@@ -1,7 +1,9 @@
 import { hasText, parseMarksForFonts } from './utils';
-import { DEFAULT_CONFIG } from './pdf.service';
+import { DEFAULT_CONFIG, splitLongLine } from './pdf.service';
 import { WriteLineParams, WriteLineResponse, FontType, Content } from './types';
 import { PDFIcons } from './pdf.icons';
+
+type TextRun = { text: string; font: FontType };
 
 export class ContentToPdfService extends PDFIcons {
   constructor({ screen, fontSize, leading, color, isPreview = true } = DEFAULT_CONFIG) {
@@ -52,7 +54,27 @@ export class ContentToPdfService extends PDFIcons {
     }
 
     if (content) {
-      for (const params of content) {
+      // An empty paragraph between two others is a blank line, as in the editor. Leading and
+      // trailing empty paragraphs (often left behind by editors) are ignored.
+      const filled = content.map((params) =>
+        hasText({ type: 'content', content: params, name: '' }),
+      );
+      const first = filled.indexOf(true);
+      const last = filled.lastIndexOf(true);
+
+      for (const [index, params] of content.entries()) {
+        if (!filled[index]) {
+          if (params.type === 'paragraph' && index > first && index < last) {
+            const gap = this.lineHeight(this.fontSize(options.fontSize), options.leading);
+            dimensions = {
+              ...dimensions,
+              nextY: dimensions.nextY - gap,
+              height: dimensions.height + gap,
+            };
+          }
+          continue;
+        }
+
         const d = await this.writeContent(params, {
           ...options,
           y: dimensions.nextY,
@@ -62,10 +84,6 @@ export class ContentToPdfService extends PDFIcons {
 
         dimensions = { ...d, height: dimensions.height + d.height };
       }
-    }
-
-    if (type === 'paragraph' && content.length === 0) {
-      dimensions.nextY = dimensions.nextY - this.fontSize('md');
     }
 
     return dimensions;
@@ -143,135 +161,173 @@ export class ContentToPdfService extends PDFIcons {
     return { ...result, pageIndex: currentPageIndex };
   }
 
+  /**
+   * Writes a paragraph of text runs (TipTap/ProseMirror text nodes, each with its own marks).
+   * Runs in one font are joined and wrapped as one text. Runs in different fonts are wrapped word by
+   * word across the lines, and each line is drawn as consecutive segments, one per font. A hard
+   * break (Shift+Enter) starts a new line.
+   */
   async writeParagraph(content: Content[], options: Omit<WriteLineParams, 'text'>) {
     const maxWidth = options.maxWidth || this.$maxWidth;
+    const x = options.x || this.$paddingX;
 
-    let dimensions: WriteLineResponse = {
+    // Split at hard breaks; each block is a list of runs.
+    const blocks: TextRun[][] = [[]];
+    for (const node of content) {
+      if (node.type === 'hardBreak' || node.type === 'hardbreak') blocks.push([]);
+      else if (node.text) {
+        const font: FontType = node.marks ? parseMarksForFonts(node.marks) : 'regular';
+        blocks[blocks.length - 1].push({ text: node.text, font });
+      }
+    }
+
+    let result: WriteLineResponse = {
       height: 0,
       width: maxWidth,
-      nextX: options.x || this.$paddingX,
+      nextX: x,
       nextY: options.y || this.$paddingY,
       pageIndex: options.pageIndex || 0,
     };
 
-    const contentLines = content.reduce<Array<{ params?: WriteLineParams[]; break?: boolean }>>(
-      (accumulator, params) => {
-        const lastIndex = accumulator.length - 1;
-        const last = accumulator[lastIndex];
-        const font: FontType = !params.marks ? 'regular' : parseMarksForFonts(params.marks);
+    for (const [index, runs] of blocks.entries()) {
+      // Only the paragraph's first line gets the bullet (and the caller's page-break look-ahead).
+      const lineOptions = index === 0 ? options : { ...options, bullet: false, offset: 0 };
 
-        if (!last && params.text) {
-          accumulator.push({
-            params: [
-              {
-                ...options,
-                text: params.text,
-                font,
-              },
-            ],
-          });
-
-          return accumulator;
-        }
-
-        if (last?.break && params.text) {
-          accumulator.push({
-            params: [
-              {
-                ...options,
-                text: params.text,
-                font,
-              },
-            ],
-          });
-
-          return accumulator;
-        }
-
-        if (params.type !== 'hardbreak' && params.text) {
-          accumulator[lastIndex].params = [
-            ...(last.params || []),
-            {
-              ...options,
-              text: params.text,
-              bullet: false,
-              font,
-            },
-          ];
-          return accumulator;
-        }
-
-        return [...accumulator, { break: true }];
-      },
-      [],
-    );
-
-    for (const { params, break: isBreak } of contentLines) {
-      const fontSize = this.fontSize('md');
-
-      if (isBreak) {
-        dimensions.nextY = dimensions.nextY - fontSize;
-        dimensions.nextX = options.x || this.$paddingX;
+      if (!runs.length) {
+        // An empty line between two hard breaks.
+        const lineHeight = this.lineHeight(this.fontSize(options.fontSize), options.leading);
+        result = {
+          ...result,
+          nextY: result.nextY - lineHeight,
+          height: result.height + lineHeight,
+        };
+        continue;
       }
 
-      if (params) {
-        const [first, ...writeParams] = params;
-
-        let d = await this.writeMultiLine({
-          ...first,
-          y: dimensions.nextY,
-          x: dimensions.nextX,
-          pageIndex: dimensions.pageIndex,
-        });
-
-        dimensions = { ...d, height: dimensions.height + d.height };
-
-        const availableWidth = maxWidth - d.width;
-
-        for (const p of writeParams) {
-          const restOfTheTextLines = this.getTextLines({
-            text: p.text,
-            font: this.getFont(p.font),
-            size: 'md',
-            maxWidth: availableWidth,
-            leading: this.$leading,
-            wordBreaks: p.wordBreaks || [' '],
+      const d = runs.every((run) => run.font === runs[0].font)
+        ? await this.writeMultiLine({
+            ...lineOptions,
+            text: runs.map((run) => run.text).join(''),
+            font: runs[0].font,
+            x,
+            y: result.nextY,
+            pageIndex: result.pageIndex,
+          })
+        : await this.writeRuns(runs, {
+            ...lineOptions,
+            x,
+            y: result.nextY,
+            pageIndex: result.pageIndex,
           });
 
-          if (restOfTheTextLines.length > 1) {
-            const [secondLine, ...rest] = restOfTheTextLines;
+      result = { ...d, width: maxWidth, nextX: x, height: result.height + d.height };
+    }
 
-            d = await this.writeLine({
-              ...options,
-              font: p.font || this.defaultFont,
-              text: secondLine,
-              y: d.nextY + fontSize,
-              x: d.nextX + fontSize,
-              fontSize: 'md',
-              pageIndex: dimensions.pageIndex,
-              maxWidth: availableWidth,
-              bullet: false,
-            });
+    return result;
+  }
 
-            dimensions = { ...d, height: dimensions.height + d.height };
+  /** Wraps runs in different fonts word by word and draws each line as one segment per font. */
+  protected async writeRuns(runs: TextRun[], options: Omit<WriteLineParams, 'text'>) {
+    const { fontSize, bullet } = options;
+    const maxWidth = options.maxWidth || this.$maxWidth;
+    const x = options.x || this.$paddingX;
+    // Every line wraps in the width left after the bullet, like single-font text does.
+    const prefix = this.prefixWidth({ text: '', bullet, fontSize });
+    const available = Math.max(maxWidth - prefix, 1) + 0.5;
+    const widthOf = (text: string, font: FontType) =>
+      this.getTextWidth({ text, font: this.getFont(font), size: fontSize, leading: this.$leading });
 
-            d = await this.writeMultiLine({
-              ...options,
-              font: p.font || this.defaultFont,
-              text: rest.join(''),
-              y: dimensions.nextY,
-              fontSize: 'md',
-              maxWidth: options.maxWidth,
-              bullet: false,
-              pageIndex: dimensions.pageIndex,
-            });
+    // Fill lines greedily, word by word. Each line is a list of segments; neighbours with the same
+    // font are merged.
+    const lines: TextRun[][] = [[]];
+    let used = 0;
+    const append = (text: string, font: FontType) => {
+      const line = lines[lines.length - 1];
+      const last = line[line.length - 1];
+      if (last?.font === font) last.text += text;
+      else line.push({ text, font });
+      used += widthOf(text, font);
+    };
+    const newLine = () => {
+      const line = lines[lines.length - 1];
+      const last = line[line.length - 1];
+      if (last) last.text = last.text.trimEnd();
+      lines.push([]);
+      used = 0;
+    };
 
-            dimensions = { ...d, height: dimensions.height + d.height };
-          }
+    for (const run of runs) {
+      for (const token of run.text.split(/(\s+)/)) {
+        if (!token) continue;
+        if (/^\s+$/.test(token)) {
+          if (used > 0) append(' ', run.font);
+          continue;
         }
+        const width = widthOf(token, run.font);
+        if (used + width <= available) {
+          append(token, run.font);
+          continue;
+        }
+        if (used > 0) newLine();
+        if (width <= available) {
+          append(token, run.font);
+          continue;
+        }
+        // A word wider than the line breaks by character.
+        const pieces = splitLongLine(token, available, (text) => widthOf(text, run.font));
+        pieces.forEach((piece, i) => {
+          append(piece, run.font);
+          if (i < pieces.length - 1) newLine();
+        });
+      }
+    }
+    newLine();
+    lines.pop();
+
+    let result: WriteLineResponse = {
+      height: 0,
+      width: maxWidth,
+      nextX: x,
+      nextY: options.y || this.$paddingY,
+      pageIndex: options.pageIndex || 0,
+    };
+
+    for (const [lineIndex, segments] of lines.entries()) {
+      const firstLine = lineIndex === 0;
+      let segmentX = x;
+      let lineTop = result.nextY;
+      let pageIndex = result.pageIndex;
+      let last: WriteLineResponse | undefined;
+
+      for (const [i, segment] of segments.entries()) {
+        const width = widthOf(segment.text, segment.font);
+        const withBullet = firstLine && i === 0 && Boolean(bullet);
+        // The first segment decides the line's page and position; the rest follow it.
+        last = await this.writeLine({
+          ...options,
+          text: segment.text,
+          font: segment.font,
+          justify: 'left',
+          bullet: withBullet,
+          offset: firstLine && i === 0 ? options.offset : 0,
+          x: segmentX,
+          y: lineTop,
+          pageIndex,
+          maxWidth: width + (withBullet ? prefix : 0) + 1,
+        });
+        if (i === 0) {
+          lineTop = last.nextY + last.height;
+          pageIndex = last.pageIndex;
+          segmentX += withBullet ? prefix : 0;
+        }
+        segmentX += width;
+      }
+
+      if (last) {
+        result = { ...last, width: maxWidth, nextX: x, height: result.height + last.height };
       }
     }
 
-    return dimensions;
+    return result;
   }
 }

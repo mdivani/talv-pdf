@@ -2,26 +2,14 @@
 
 Known issues that have a workaround in place but still need a proper fix.
 
-## Row values are not limited to the width left on the line
+## Inter is embedded in full
 
-**Where:** `writeRow` in `packages/resume/pdf.service.ts`, `justify === 'start'` branch.
+**Where:** `embedFonts` in `packages/resume/pdf.service.ts`, `interFont` in `packages/resume/assets.ts`.
 
-**Problem:** Every value in a row is written with `maxWidth: containerWidth`, the full width of the row. It should be the width still free on the line, `containerWidth - (positionX - x)`. A later value starts after the earlier ones but may still be as wide as the whole row, so it runs past the column edge and gets clipped. The `center` and `between` branches end up in the same code path, so they are affected too.
+**Problem:** A resume with `interFont` is about 920 KB, because the five Inter files are embedded whole. With the default Helvetica it is about 10 KB.
 
-**Workaround in place:** The `talvio` template stacks the education degree and date as separate `text` items instead of one row (MDI-422). The package README tells template authors to use rows only where every value fits on one line.
+Subsetting with `@pdf-lib/fontkit` (`embedFont(bytes, { subset: true })`) can't fix it for Inter. With the Inter v19 files from Google Fonts it drops most glyphs: "Maya Lindqvist" renders as "aya L n" in both pdf.js and macOS Preview. Text extraction still works, so the text layer hides the problem. Roboto from Google Fonts subsets correctly (400 KB to 41 KB, renders the same).
 
-**Still affected:**
+**Workaround in place:** Custom fonts can opt in with `subset: true` on the `CustomFont`. It is off by default and `interFont` doesn't set it. A test checks that `interFont` never turns it on.
 
-- `ember`: `keys: ['degree', 'dateRangeShort']` and `['company', 'locationType']`.
-- `mint`: `keys: ['degree', 'school', 'dateRangeShort']` and `['company', 'locationType']`.
-- Any user template with a row in a narrow column.
-
-**Fix:** Pass the remaining width to each value in `writeRow`. Decide what happens when there is no room left, for example wrapping the value onto the next line at `x`. Then put the `talvio` education row back and remove the row caveat from the package README.
-
-## Custom fonts are embedded in full
-
-**Where:** `embedFonts` in `packages/resume/pdf.service.ts`.
-
-**Problem:** Before 0.2.4 the font map was built wrongly and every PDF fell back to Helvetica. Now the five Inter files are embedded whole, so a one-page resume is about 930 KB instead of about 6 KB.
-
-**Fix:** Embed with `doc.embedFont(bytes, { subset: true })`. A quick test brings the file back to about 6 KB. `@pdf-lib/fontkit` subsetting has known glyph bugs with some fonts, so check the output in Acrobat, Chrome and macOS Preview, including non-Latin text, before switching it on.
+**Fix:** Either find an Inter build that `@pdf-lib/fontkit` subsets correctly (for example the static TTFs from the Inter GitHub releases) and point `interFont` at it, or subset with HarfBuzz (`hb-subset`) before embedding. The HarfBuzz route needs the characters each font uses before `save()`, so it means rendering twice or collecting text during layout. Compare full and subset renders in pdf.js and macOS Preview before switching, including accented and Cyrillic text.

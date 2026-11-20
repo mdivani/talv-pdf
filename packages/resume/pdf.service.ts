@@ -1,7 +1,7 @@
 import { PDFDocument, PDFPage, StandardFonts, PDFFont, RGB, breakTextIntoLines } from 'pdf-lib';
 import fontkit from '@pdf-lib/fontkit';
 import { fromHexStr, getIconPath, getLinkIconType } from './utils';
-import { defaultFontMap, fetchCustomFont, fetchImage } from './assets';
+import { fetchCustomFont, fetchImage } from './assets';
 import {
   DrawCircleParams,
   DrawIconParams,
@@ -19,6 +19,7 @@ import {
   JustifyTextParams,
   CustomFont,
   Watermark,
+  IconTypes,
 } from './types';
 import { getFontSize, getLineHeight, getSeparatorSize, getSpacing, justifyLine } from './utils';
 import { iconScaleMap } from './constants';
@@ -44,7 +45,9 @@ export type Config = {
 };
 
 /** Options that can be overridden for a single render. */
-export type RenderOptions = Partial<Pick<Config, 'color' | 'colors' | 'fontSize' | 'leading' | 'customFont'>>;
+export type RenderOptions = Partial<
+  Pick<Config, 'color' | 'colors' | 'fontSize' | 'leading' | 'customFont'>
+>;
 
 export const DEFAULT_COLORS: Record<Colors, string> = {
   primary: '#1C1C1C',
@@ -67,13 +70,65 @@ export const DEFAULT_CONFIG: Config = {
 
 type FontBytes = Array<{ type: FontType; arrayBuffer: ArrayBuffer }>;
 
+/** The PDF standard fonts used when no custom font is set. Every PDF viewer has them, so nothing is downloaded. */
+const STANDARD_FONTS: Record<FontType, StandardFonts> = {
+  regular: StandardFonts.Helvetica,
+  semibold: StandardFonts.HelveticaBold,
+  bold: StandardFonts.HelveticaBold,
+  italic: StandardFonts.HelveticaOblique,
+  'bold-italic': StandardFonts.HelveticaBoldOblique,
+};
+
 const fontCacheKey = (font: CustomFont) => JSON.stringify([font.name, font.fonts]);
 
 /** Folds the `color` shorthand into `colors` so layers can be merged key by key. */
-const normalizeColors = ({ color, colors }: Pick<Partial<Config>, 'color' | 'colors'>): ColorOverrides => ({
+const normalizeColors = ({
+  color,
+  colors,
+}: Pick<Partial<Config>, 'color' | 'colors'>): ColorOverrides => ({
   ...(color ? { secondary: color } : {}),
   ...colors,
 });
+
+/** Characters after which a long word may break, in order of preference. */
+const SOFT_BREAKS = /[-/.@_?&=,]/;
+
+/**
+ * Splits a line that is too wide into pieces that fit, character by character. A piece ends after a
+ * soft break character (`-`, `/`, `.`, `@`, ...) when one is in its second half, so URLs and email
+ * addresses break at natural points.
+ */
+export function splitLongLine(
+  line: string,
+  maxWidth: number,
+  widthOf: (text: string) => number,
+): string[] {
+  const pieces: string[] = [];
+  let rest = line;
+  while (rest) {
+    let end = 1;
+    while (end < rest.length && widthOf(rest.slice(0, end + 1)) <= maxWidth) end++;
+    if (end < rest.length) {
+      // Break after the last soft break character in the piece's second half, but not one that
+      // would leave only a character or two for the next line ("project-" + "2") when an earlier
+      // one exists.
+      let fallback = 0;
+      for (let i = end - 1; i > end / 2; i--) {
+        if (!SOFT_BREAKS.test(rest[i])) continue;
+        if (rest.length - (i + 1) >= 3) {
+          fallback = 0;
+          end = i + 1;
+          break;
+        }
+        fallback ||= i + 1;
+      }
+      if (fallback) end = fallback;
+    }
+    pieces.push(rest.slice(0, end));
+    rest = rest.slice(end);
+  }
+  return pieces;
+}
 
 export class BasePDFService {
   protected $width = 595;
@@ -99,6 +154,8 @@ export class BasePDFService {
   protected $document: PDFDocument | null = null;
   protected $pages: PDFPage[] = [];
   protected $defaultFont?: PDFFont;
+  /** Characters the standard fonts can encode. Text drawn with them is limited to this set. */
+  private $standardCharset?: Set<number>;
 
   /** Settings from the constructor or `init()`. Per-render overrides are layered on top and never written back. */
   protected $baseConfig: Config;
@@ -166,9 +223,17 @@ export class BasePDFService {
     const fontSize = this.fontSize(size);
     const getTextWidth = (t: string) => font.widthOfTextAtSize(t, fontSize);
 
-    const lines = breakTextIntoLines(text, wordBreaks, maxWidth, getTextWidth);
+    // Half a point of slack: a value given exactly its own measured width (as rows do) must not wrap
+    // because of floating-point rounding.
+    const limit = maxWidth + 0.5;
+    const lines = breakTextIntoLines(text, wordBreaks, limit, getTextWidth);
 
-    return lines;
+    // A single word wider than the line (a URL, an email address) is broken by characters.
+    return lines.flatMap((line) =>
+      getTextWidth(line.trimEnd()) > limit
+        ? splitLongLine(line.trimEnd(), limit, getTextWidth)
+        : [line],
+    );
   }
 
   getTextWidth(options: TextWidthParams) {
@@ -209,7 +274,16 @@ export class BasePDFService {
     return { height, width, nextY: y - height, nextX: x, pageIndex };
   }
 
-  justifyText({ justify, text, containerWidth, maxWidth, size, font, wordBreaks, leading }: JustifyTextParams) {
+  justifyText({
+    justify,
+    text,
+    containerWidth,
+    maxWidth,
+    size,
+    font,
+    wordBreaks,
+    leading,
+  }: JustifyTextParams) {
     const lines = this.getTextLines({ text, maxWidth, size, font, wordBreaks, leading });
 
     const widths = lines.map((line) => this.getTextWidth({ text: line, size, font, leading }));
@@ -222,7 +296,15 @@ export class BasePDFService {
   }
 
   /** Sets every layout and color field from a full config. Derived sizes are recomputed here so they never go stale. */
-  protected applyConfig({ screen, fontSize, leading, color, colors, isPreview = true, watermark }: Config) {
+  protected applyConfig({
+    screen,
+    fontSize,
+    leading,
+    color,
+    colors,
+    isPreview = true,
+    watermark,
+  }: Config) {
     this.$fontScale = fontSize;
     this.$leading = leading;
     this.$width = screen.width;
@@ -263,10 +345,40 @@ export class BasePDFService {
   protected async newDocument() {
     this.$document = await PDFDocument.create();
     this.$document.registerFontkit(fontkit);
-    this.$defaultFont = await this.$document.embedFont(StandardFonts.Helvetica);
-    this.$fonts = {};
+    const doc = this.$document;
+    const standard = await Promise.all(
+      (Object.keys(STANDARD_FONTS) as FontType[]).map(
+        async (type) => [type, await doc.embedFont(STANDARD_FONTS[type])] as const,
+      ),
+    );
+    this.$fonts = Object.fromEntries(standard) as Partial<Record<FontType, PDFFont>>;
+    this.$defaultFont = this.$fonts.regular;
     this.$fontFamily = 'Helvetica';
     this.$pages = [];
+  }
+
+  /** True while the document uses the standard fonts, that is when no custom font is embedded. */
+  protected get usesStandardFonts() {
+    return this.$fontFamily === 'Helvetica';
+  }
+
+  /**
+   * Makes text safe to draw with the current fonts. The standard fonts only cover WinAnsi (Western
+   * European) characters and pdf-lib throws on anything else, so with them every other character is
+   * replaced: whitespace with a space, the rest with `?`. Custom fonts get the text unchanged.
+   */
+  encodable(text: string) {
+    if (!this.usesStandardFonts) return text;
+
+    this.$standardCharset ??= new Set(this.defaultFont.getCharacterSet());
+    const charset = this.$standardCharset;
+
+    let out = '';
+    for (const char of text.normalize('NFC')) {
+      const code = char.codePointAt(0) as number;
+      out += charset.has(code) ? char : /\s/.test(char) ? ' ' : '?';
+    }
+    return out;
   }
 
   async init(config: Config = DEFAULT_CONFIG) {
@@ -312,14 +424,17 @@ export class BasePDFService {
     return bytes;
   }
 
-  async embedFonts(customFont: CustomFont = defaultFontMap) {
+  async embedFonts(customFont: CustomFont) {
     if (!this.$document) throw new Error('Initialise document first');
 
     const doc = this.$document; // ts workaround to avoid type error
 
     const fontBytes = await this.loadFonts(customFont);
     const embedded = await Promise.all(
-      fontBytes.map(async ({ type, arrayBuffer }) => [type, await doc.embedFont(arrayBuffer)] as const),
+      fontBytes.map(
+        async ({ type, arrayBuffer }) =>
+          [type, await doc.embedFont(arrayBuffer, { subset: customFont.subset === true })] as const,
+      ),
     );
 
     this.$fonts = Object.fromEntries(embedded) as Partial<Record<FontType, PDFFont>>;
@@ -328,13 +443,26 @@ export class BasePDFService {
     return this.$fonts;
   }
 
+  /** Where content starts on every page: the same top margin as the first page. */
+  protected get pageTop() {
+    return this.$height - this.$paddingY;
+  }
+
+  /**
+   * Moves from `pageIndex` to the page after it. Columns side by side share pages, so the page may
+   * already exist (another column broke onto it first); otherwise it is added.
+   */
+  protected async nextPage(pageIndex: number) {
+    if (this.currentPageIndex <= pageIndex) await this.addPage();
+    return pageIndex + 1;
+  }
+
   async addPage() {
     if (!this.$document) throw new Error('Initialise class first');
 
     const page = await this.$document.addPage([this.$width, this.$height]);
 
     if (this.$watermark) {
-
       if (this.$watermark.url) {
         const logoBytes = await fetchImage(this.$watermark.url);
         const logo = await this.$document.embedPng(logoBytes as unknown as Uint8Array);
@@ -348,8 +476,10 @@ export class BasePDFService {
       }
 
       if (this.$watermark.text) {
-        const color = this.$watermark.color ? fromHexStr(this.$watermark.color) : this.$colors.primary;
-        page.drawText(this.$watermark.text, {
+        const color = this.$watermark.color
+          ? fromHexStr(this.$watermark.color)
+          : this.$colors.primary;
+        page.drawText(this.encodable(this.$watermark.text), {
           x: 28,
           y: 10,
           size: this.fontSize('sm'),
@@ -363,14 +493,33 @@ export class BasePDFService {
     return this.$height - this.$paddingY - 20;
   }
 
-  addText({ text = '', page, ...options }: WriteTextParams) {
-    const fontSize = this.fontSize(options.size);
-    const color = this.color(options.color);
+  /**
+   * Draws text wrapped at `maxWidth`. The wrapping is done here, with the same rules used to measure
+   * text, and pdf-lib only gets the finished lines: its own wrapping has no slack for rounding and
+   * can't break long words, so letting it re-wrap made drawn text differ from measured text.
+   */
+  addText({
+    text = '',
+    page,
+    x,
+    y,
+    font,
+    size,
+    maxWidth,
+    wordBreaks,
+    leading,
+    lineHeight,
+    ...options
+  }: WriteTextParams) {
+    const lines = this.getTextLines({ text, font, size, maxWidth, wordBreaks, leading });
 
-    page.drawText(text, {
-      ...options,
-      size: fontSize,
-      color,
+    page.drawText(lines.join('\n'), {
+      x,
+      y,
+      font,
+      lineHeight,
+      size: this.fontSize(size),
+      color: this.color(options.color),
     });
   }
 
@@ -403,10 +552,14 @@ export class BasePDFService {
     const lineHeight = this.lineHeight(fontSize, leading);
     const indent = icon || bullet ? this.spacing('lg') : 0;
 
+    // The icon and bullet sit in front of the text, so the text only gets the width left after them.
+    const prefix = this.prefixWidth({ text, icon, bullet, fontSize: size });
+    const textMaxWidth = Math.max(maxWidth - prefix, 1);
+
     const { height: textHeight, width: textWidth } = this.getTextDimensions({
       text,
       font,
-      maxWidth,
+      maxWidth: textMaxWidth,
       size,
       wordBreaks,
       leading: leading || this.$leading,
@@ -414,16 +567,12 @@ export class BasePDFService {
 
     currentWidth = textWidth;
     currentY = currentY - textHeight;
-    const positionX = x + justifyLine({ justify, textWidth: currentWidth, containerWidth: maxWidth });
+    const positionX =
+      x + justifyLine({ justify, textWidth: currentWidth + prefix, containerWidth: maxWidth });
 
     if (this.isOverflowing(currentY - offset)) {
-      if (this.currentPageIndex > currentPageIndex) {
-        currentPageIndex += 1;
-        currentY = this.$height - this.$paddingY;
-      } else {
-        currentPageIndex += 1;
-        currentY = await this.addPage();
-      }
+      currentPageIndex = await this.nextPage(currentPageIndex);
+      currentY = this.pageTop - textHeight;
     }
 
     const page = this.$pages[currentPageIndex];
@@ -438,7 +587,8 @@ export class BasePDFService {
       }
       const iconResult = this.drawIcon({
         x: positionX,
-        y,
+        // The top of the line where it was drawn, which is not `y` if the line moved to a new page.
+        y: currentY + textHeight,
         color: 'secondary',
         icon: selectedIcon,
         page,
@@ -454,7 +604,7 @@ export class BasePDFService {
       color,
       lineHeight,
       font,
-      maxWidth,
+      maxWidth: textMaxWidth,
       wordBreaks,
       size,
       y: currentY,
@@ -512,9 +662,10 @@ export class BasePDFService {
 
     if (!font) throw new Error('Default font is not initialised');
 
+    // Wrap in the width left after the first line's icon or bullet, so that line fits too.
     const lines = this.getTextLines({
       text,
-      maxWidth,
+      maxWidth: Math.max(maxWidth - this.prefixWidth({ ...options, fontSize: size }), 1),
       size,
       font,
       wordBreaks,
@@ -526,7 +677,10 @@ export class BasePDFService {
     let width = 0;
 
     for (const [index, line] of lines.entries()) {
-      const prefixes = index === 0 ? { icon: options.icon, bullet: options.bullet } : { icon: null, bullet: false };
+      const prefixes =
+        index === 0
+          ? { icon: options.icon, bullet: options.bullet }
+          : { icon: null, bullet: false };
 
       const result = await this.writeLine({
         ...options,
@@ -535,6 +689,8 @@ export class BasePDFService {
         y: nextY,
         pageIndex: currentPageIndex,
         leading,
+        // The look-ahead applies to the first line only: once it is placed, the rest follows it.
+        offset: index === 0 ? options.offset : 0,
         ...prefixes,
       });
 
@@ -573,6 +729,40 @@ export class BasePDFService {
     };
   }
 
+  /** Width of an icon as drawn by `drawIcon`. Icon sets with their own sizes override this. */
+  iconWidth(_icon: IconTypes, size: Size) {
+    return this.fontSize(size) * iconScaleMap[size];
+  }
+
+  /** Width of what `writeLine` draws before the text: a bullet's indent and an icon. */
+  protected prefixWidth({
+    text,
+    icon,
+    bullet,
+    fontSize,
+  }: Pick<WriteLineParams, 'text' | 'icon' | 'bullet' | 'fontSize'>) {
+    // `writeLine` picks the icon for a link from its URL, so measure the same icon.
+    const resolved = icon === 'link' ? getLinkIconType(text) : icon;
+    return (bullet ? this.spacing('lg') : 0) + (resolved ? this.iconWidth(resolved, fontSize) : 0);
+  }
+
+  /** Width of `text` drawn on one line with its icon, as `writeLine` reports it. */
+  protected lineWidth({ text, font = 'regular', fontSize, icon, leading }: WriteLineParams) {
+    const textWidth = this.getTextWidth({
+      text,
+      font: this.getFont(font),
+      size: fontSize,
+      leading: leading || this.$leading,
+    });
+    return textWidth + (icon ? this.prefixWidth({ text, icon, fontSize }) + 2 : 0);
+  }
+
+  /**
+   * Writes several values side by side. If they fit on one line they are placed by `justify`. If
+   * not, the last value of a `between` row (usually a date) stays on the right and the others wrap
+   * in the space left; otherwise values flow onto new lines. No value is ever wider than the space
+   * it is given, so nothing runs past the column.
+   */
   async writeRow(options: WriteRowParams): Promise<WriteLineResponse> {
     const {
       texts,
@@ -581,120 +771,145 @@ export class BasePDFService {
       x,
       y,
       gap,
-      dynamicGap = 0,
       separator = '',
       pageIndex = this.currentPageIndex,
     } = options;
 
-    const filteredTexts = texts.filter((txt) => txt.text);
-    const space = dynamicGap ? dynamicGap : this.spacing(gap);
-    let height = 0;
-    let positionY = y;
+    // Each value keeps its text without the separator; the separator is only drawn between values
+    // that share a line, never at the start of one.
+    const values = texts
+      .filter((txt) => txt.text)
+      .map((txt) => ({ ...txt, font: txt.font || 'regular', justify: 'left' as const }));
+    if (!values.length) return { height: 0, width: containerWidth, nextX: x, nextY: y, pageIndex };
 
+    const space = this.spacing(gap);
+    const right = x + containerWidth;
+    const textOf = (i: number, startsLine: boolean) =>
+      startsLine ? values[i].text : separator + values[i].text;
+    const widthOf = (i: number, startsLine: boolean) =>
+      this.lineWidth({ ...values[i], text: textOf(i, startsLine) });
+    const lineHeights = values.map((value) =>
+      this.lineHeight(this.fontSize(value.fontSize), value.leading),
+    );
+    const rowLineHeight = Math.max(...lineHeights);
+
+    let top = y;
     let currentPageIndex = pageIndex;
 
-    if (justify === 'start') {
-      let positionX = x;
-      let previousLineHeight = 0;
+    // The row's first line stays together: if it doesn't fit, the whole row moves to the next page.
+    if (this.isOverflowing(top - rowLineHeight - (values[0].offset ?? 0))) {
+      currentPageIndex = await this.nextPage(currentPageIndex);
+      top = this.pageTop;
+    }
 
-      for (const [index, txt] of filteredTexts.entries()) {
-        const currentFontSize = this.fontSize(txt.fontSize);
-        const currentLineHeight = this.lineHeight(currentFontSize, txt.leading);
+    let bottom = top;
 
-        if (previousLineHeight) {
-          positionY =
-            positionY -
-            (currentLineHeight > previousLineHeight
-              ? currentLineHeight - previousLineHeight
-              : previousLineHeight > currentLineHeight
-                ? previousLineHeight - currentLineHeight
-                : 0);
-        }
-
-        const result = await this.writeMultiLine({
-          ...txt,
-          text: index === 0 ? txt.text : separator + txt.text,
-          x: positionX,
-          y: positionY,
-          pageIndex,
-          maxWidth: containerWidth,
-        });
-
-        previousLineHeight = currentLineHeight;
-        positionX = result.nextX + result.width + space;
-        positionY = result.nextY > positionY ? result.nextY + result.height : positionY;
-        height = result.height > height ? result.height : height;
+    /** Writes value `i` with its first line's top at `lineTop`, aligned to the row's baseline. */
+    const write = async (
+      i: number,
+      startsLine: boolean,
+      atX: number,
+      lineTop: number,
+      maxWidth: number,
+      justify: 'left' | 'center' = 'left',
+    ) => {
+      const result = await this.writeMultiLine({
+        ...values[i],
+        text: textOf(i, startsLine),
+        justify,
+        x: atX,
+        y: lineTop - (rowLineHeight - lineHeights[i]),
+        pageIndex: currentPageIndex,
+        maxWidth,
+      });
+      if (result.pageIndex !== currentPageIndex) {
         currentPageIndex = result.pageIndex;
+        bottom = result.nextY;
+      } else {
+        bottom = Math.min(bottom, result.nextY);
       }
-    }
+    };
 
-    if (justify === 'center') {
-      let totalWidth = space * (texts.length - 1);
-      filteredTexts.forEach((txt) => {
-        const font = this.getFont(txt.font || 'regular');
+    /**
+     * Writes values between `left` and `left + width`, as many per line as fit. Lines are centered
+     * when `center` is set. A value wider than the whole width gets a line of its own and wraps.
+     */
+    const flow = async (indices: number[], left: number, width: number, center: boolean) => {
+      const lines: number[][] = [];
+      let used = 0;
+      for (const i of indices) {
+        const line = lines[lines.length - 1];
+        const extra = space + widthOf(i, false);
+        if (line && used + extra <= width) {
+          line.push(i);
+          used += extra;
+        } else {
+          lines.push([i]);
+          used = widthOf(i, true);
+        }
+      }
 
-        const dimensions = this.getWriteLineDimensions({
-          ...txt,
-          x,
-          y,
-          size: txt.fontSize || 'sm',
-          font,
-          maxWidth: txt.maxWidth || containerWidth,
-          leading: txt.leading || this.$leading,
-        });
+      let lineTop = top;
+      for (const line of lines) {
+        const lineWidth = line.reduce(
+          (sum, i, index) => sum + widthOf(i, index === 0) + (index ? space : 0),
+          0,
+        );
+        if (lineWidth > width) {
+          // A single value too wide for the line: wrap it across the full width.
+          await write(line[0], true, left, lineTop, width, center ? 'center' : 'left');
+        } else {
+          let cursor = center ? left + (width - lineWidth) / 2 : left;
+          for (const [index, i] of line.entries()) {
+            await write(i, index === 0, cursor, lineTop, left + width - cursor);
+            cursor += widthOf(i, index === 0) + space;
+          }
+        }
+        lineTop = bottom;
+      }
+    };
 
-        totalWidth = totalWidth + dimensions.width;
-      });
+    const all = values.map((_, i) => i);
+    const last = values.length - 1;
+    const total = all.reduce((sum, i) => sum + widthOf(i, i === 0) + (i ? space : 0), 0);
 
-      const startX = (containerWidth - totalWidth) / 2 + this.$paddingX / 2;
-
-      return this.writeRow({
-        ...options,
-        pageIndex: currentPageIndex,
-        gap,
-        justify: 'start',
-        x: startX,
-      });
-    }
-
-    if (justify === 'between') {
-      const totalWidth = filteredTexts.reduce(
-        (acc, txt) =>
-          acc +
-          this.getWriteLineDimensions({
-            ...txt,
-            x,
-            y,
-            size: txt.fontSize || 'sm',
-            font: this.getFont(txt.font || 'regular'),
-            maxWidth: txt.maxWidth || containerWidth,
-            leading: txt.leading || this.$leading,
-          }).width,
-        0,
-      );
-
-      const dynamicGap = (containerWidth - totalWidth) / (texts.length - 1);
-
-      return this.writeRow({
-        ...options,
-        gap,
-        dynamicGap,
-        justify: 'start',
-        x,
-        pageIndex: currentPageIndex,
-      });
+    if (justify === 'between' && last > 0 && total <= containerWidth) {
+      // Everything fits on one line: first value on the left, last on the right, the rest spread between.
+      const between = (containerWidth - (total - space * last)) / last;
+      let cursor = x;
+      for (const i of all) {
+        const width = widthOf(i, i === 0);
+        const atX = i === last ? right - width : cursor;
+        await write(i, i === 0, atX, top, right - atX);
+        cursor += width + between;
+      }
+    } else if (justify === 'between' && last > 0 && widthOf(last, false) <= containerWidth / 2) {
+      // Keep the last value (usually a date) on the right of the first line and wrap the rest in the
+      // space left.
+      const lastWidth = widthOf(last, false);
+      await write(last, false, right - lastWidth, top, lastWidth);
+      await flow(all.slice(0, last), x, containerWidth - lastWidth - space, false);
+    } else {
+      await flow(all, x, containerWidth, justify === 'center');
     }
 
     return {
-      height,
+      height: top - bottom,
       width: containerWidth,
       nextX: x,
-      nextY: positionY - height,
+      nextY: bottom,
       pageIndex: currentPageIndex,
     };
   }
 
-  drawStreightLine({ x, y, width, size = 'sm', color: colorType = 'secondary', page }: DrawLineParams) {
+  drawStreightLine({
+    x,
+    y,
+    width,
+    size = 'sm',
+    color: colorType = 'secondary',
+    page,
+  }: DrawLineParams) {
     const thickness = this.separator(size);
     const color = this.color(colorType);
 
@@ -750,12 +965,11 @@ export class BasePDFService {
 
     if (count === 0) {
       this.$pages = [];
-      return
+      return;
     }
 
     this.$document.removePage(0);
 
     this.removeAllPages();
-
   }
 }

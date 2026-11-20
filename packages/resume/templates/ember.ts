@@ -221,7 +221,8 @@ const educationFields: Field<ItemStyle>[] = [
         },
       },
       {
-        name: 'details',
+        name: 'description',
+        margins: { top: 'sm' },
         type: 'content',
       },
     ],

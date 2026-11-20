@@ -10,7 +10,7 @@ yarn add @pdf-tlv/resume
 npm install @pdf-tlv/resume
 ```
 
-The library downloads the Inter font from Google Fonts when you call `create()`, so it needs a global `fetch` and network access. That means Node.js 18 or later, or any modern browser.
+Out of the box the library uses the PDF standard fonts (Helvetica), so it renders offline and downloads nothing. Custom fonts and watermark images are downloaded with the global `fetch`, which needs Node.js 18 or later, or any modern browser.
 
 ## Quick start
 
@@ -105,7 +105,7 @@ Sets up the PDF document and loads the fonts. Every option is optional.
 | `leading` | `'sm' \| 'md' \| 'lg' \| 'xl'` | `'md'` | Scale applied to line height. |
 | `screen` | `{ width, height, paddingX, paddingY }` | A4: `595 × 842`, padding `20` | Page size and margins, in PDF points. |
 | `watermark` | `{ text?, url?, color? }` | none | Draws a small mark in the bottom-left corner of every page. `url` must point to a PNG. `color` is a hex string. |
-| `customFont` | `{ name, fonts }` | Inter | Typeface for every render. See `generate()` below for the format. |
+| `customFont` | `{ name, fonts }` | Helvetica, built in | Typeface for every render. See [Fonts](#fonts) for the format. |
 
 ### `generate({ data, template, options? })`
 
@@ -118,7 +118,21 @@ await service.generate({ data, template: ember, options: { color: '#660000' } })
 await service.generate({ data, template: talvio }); // uses the color from create() again
 ```
 
-To switch typefaces, pass `customFont`:
+### Fonts
+
+Without `customFont`, every render uses Helvetica, one of the standard fonts built into every PDF viewer. Nothing is downloaded, so it works offline, in CI and in e2e tests, and a one-page resume is about 10 KB.
+
+Helvetica only covers Western European characters. Any other character, for example Cyrillic, Greek or Georgian, is drawn as `?`. For those, use a custom font that covers them.
+
+To use Inter, which the built-in templates are designed with, pass the bundled `interFont`. It is downloaded from Google Fonts, so the environment needs access to `fonts.gstatic.com`:
+
+```ts
+import { ResumePDFService, interFont } from '@pdf-tlv/resume';
+
+await service.create({ customFont: interFont });
+```
+
+To use any other typeface, pass the URLs of its five font files:
 
 ```ts
 await service.generate({
@@ -139,7 +153,9 @@ await service.generate({
 });
 ```
 
-All five font weights are required. Font files are downloaded once and cached on the service, so later renders with the same font don't download them again. The service keeps the `create()` font and the most recent other font.
+All five font weights are required. If a file can't be downloaded, `create()` or `generate()` rejects with an error naming the file. Font files are downloaded once and cached on the service, so later renders with the same font don't download them again. The service keeps the `create()` font and the most recent other font.
+
+Custom fonts are embedded whole, so a resume with Inter is about 920 KB. Set `subset: true` on a custom font to embed only the characters the resume uses, which brings a Roboto resume from about 400 KB to about 40 KB. Subsetting is off by default because the subsetter drops glyphs from some fonts, including Inter as served by Google Fonts, so check a few PDFs before you turn it on for a font.
 
 ### Colors
 
@@ -179,19 +195,31 @@ await service.create({ colors: { primary: '#222222', secondary: '#660000', neutr
 
 Each entry in `experience`, `education`, `projects` and `recommendations` also needs a `kind` field that matches its section: `'experience'`, `'education'`, `'project'` or `'recommendation'`.
 
-The built-in templates show `locationType` on an experience entry, such as `'Remote'`, next to the company. They show `dateRangeShort` on an education entry, such as `'2017 - 2021'`, under or beside the degree. If `dateRangeShort` is missing, no date is shown for that entry.
+The built-in templates show `locationType` on an experience entry, such as `'Remote'`, next to the company. They show `dateRangeShort` on an education entry, such as `'2017 - 2021'`, under or beside the degree. If `dateRangeShort` is missing, no date is shown for that entry. An education entry's `description` is shown below it when there is one.
 
 ### Rich text
 
-`description` on experience, education, projects and recommendations is a rich text document in [TipTap](https://tiptap.dev/) / ProseMirror JSON format. The renderer supports paragraphs and bullet lists.
+`description` on experience, education, projects and recommendations is a rich text document in [TipTap](https://tiptap.dev/) / ProseMirror JSON format. The renderer supports:
 
-Keep each paragraph or list item to a single text run. Inline formatting such as bold or italic splits a paragraph into several runs, and the renderer can drop the later runs.
+- paragraphs, including inline `bold` and `italic` marks, which can be mixed within a line
+- bullet lists, including nested lists
+- hard breaks (`hardBreak`, Shift+Enter in the editor), which start a new line
+- empty paragraphs between two others, which leave a blank line (leading and trailing ones are ignored)
+
+Other marks, such as links or underline, are drawn as plain text.
 
 ```ts
 const description = {
   type: 'doc',
   content: [
-    { type: 'paragraph', content: [{ type: 'text', text: 'Led the platform migration with zero downtime.' }] },
+    {
+      type: 'paragraph',
+      content: [
+        { type: 'text', text: 'Led the platform migration with ' },
+        { type: 'text', text: 'zero downtime', marks: [{ type: 'bold' }] },
+        { type: 'text', text: '.' },
+      ],
+    },
     {
       type: 'bulletList',
       content: [
@@ -286,7 +314,7 @@ Add `join` to a field to merge a list into one line instead, for example to show
 | Type | Draws |
 | --- | --- |
 | `text` | One value from the data. Long text wraps to the available width. |
-| `row` | Several values on one line, listed in `keys`. `justify` can be `'between'`, `'center'` or `'start'`, and `separator` adds text such as `' \| '` between values. Later values are not limited to the space left on the line, so use rows only where every value fits on one line. In narrow columns, stack values as separate `text` items instead. |
+| `row` | Several values on one line, listed in `keys`. `justify` can be `'between'`, `'center'` or `'start'`, and `separator` adds text such as `' \| '` between values. When the values don't fit on one line, the last value of a `'between'` row (usually a date) stays on the right and the others wrap in the space left. Otherwise values move to new lines, and a separator is never drawn at the start of a line. |
 | `content` | A rich text document from the data. |
 
 Text styles take a required `fontSize`, `font` and `color`, and these optional settings:
