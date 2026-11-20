@@ -462,14 +462,8 @@ export class BasePDFService {
   protected async newDocument() {
     this.$document = await PDFDocument.create();
     this.$document.registerFontkit(fontkit);
-    const doc = this.$document;
-    const standard = await Promise.all(
-      (Object.keys(STANDARD_FONTS.body) as FontType[]).map(
-        async (type) => [type, await doc.embedFont(STANDARD_FONTS.body[type])] as const,
-      ),
-    );
-    this.$fonts = Object.fromEntries(standard) as FontSet;
-    this.$families = { body: this.$fonts };
+    this.$families = {};
+    this.embedStandardFamily('body');
     this.$standardFamilies = new Set(['body']);
     this.$defaultFont = this.$fonts.regular;
     this.$pages = [];
@@ -538,7 +532,16 @@ export class BasePDFService {
 
     const fonts = config.fonts ?? {};
     this.$standardFamilies = new Set();
-    for (const family of new Set<FontFamily>(['body', ...families])) {
+    const wanted = [...new Set<FontFamily>(['body', ...families])];
+    // Download the families' files together, each typeface once; embedding then reads the cache.
+    const typefaces = new Map(
+      wanted.flatMap((family) => {
+        const font = fonts[family];
+        return font ? [[fontCacheKey(font), font] as const] : [];
+      }),
+    );
+    await Promise.all([...typefaces.values()].map((font) => this.loadFonts(font)));
+    for (const family of wanted) {
       const files = fonts[family];
       if (files) await this.embedFonts(files, family);
       else if (family !== 'body') this.embedStandardFamily(family);

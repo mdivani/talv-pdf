@@ -9,6 +9,8 @@ import {
   LabelItem,
   SeparatorVariant,
   Color,
+  TextItem,
+  LineParams,
 } from './types';
 import { ContentToPdfService } from './content-to-pdf.service';
 import { Config, DEFAULT_CONFIG, RenderOptions } from './pdf.service';
@@ -192,17 +194,8 @@ export class ResumePDFService extends ContentToPdfService {
   protected itemHeight(item: Item, width: number) {
     let height = this.spacing(item.margins?.top) + this.spacing(item.margins?.bottom);
     if (item.type === 'text') {
-      const { text, fontSize, font = 'regular', family, leading, icon, bullet } = item.item;
-      const lines = this.getTextLines({
-        text,
-        size: fontSize,
-        font: this.getFont(font, family),
-        leading: leading || this.$leading,
-        maxWidth:
-          Math.min(item.item.maxWidth || width, width) -
-          this.prefixWidth({ text, icon, bullet, fontSize }),
-      });
-      height += lines.length * this.lineHeight(this.fontSize(fontSize), leading);
+      const { fontSize, leading } = item.item;
+      height += this.textLineCount(item, width) * this.lineHeight(this.fontSize(fontSize), leading);
     } else if (item.type === 'row') {
       height += Math.max(
         ...item.item.texts.map((value) =>
@@ -379,7 +372,8 @@ export class ResumePDFService extends ContentToPdfService {
     return {
       currentY,
       currentX: currentX - pad.x,
-      width: x + maxWidth + 2 * pad.x,
+      // The group's right edge, wherever a label column moved its content.
+      width: x + outerWidth,
       pageIndex: currentPageIndex,
     };
   }
@@ -608,19 +602,38 @@ export class ResumePDFService extends ContentToPdfService {
       let itemWidth = currentMaxWidth;
       let asideEnd: Position | undefined;
 
+      const columnGap = this.spacing(aside?.gap ?? 'md');
       if (aside && filled) {
-        const columnGap = this.spacing(aside.gap ?? 'md');
         const gutter = aside.rule ? 2 * columnGap : columnGap;
         itemX = currentX + aside.width + gutter;
         itemWidth = currentMaxWidth - aside.width - gutter;
+      }
 
+      // An entry (one object of a list, such as a job) keeps its heading with the start of its
+      // content: its first line only goes on this page if the rest of it and a little of what
+      // follows fit too.
+      const rest = asideItem ? items.filter((item) => item !== asideItem) : items;
+      const head = field.source === 'objects' && rest.length > 1 ? rest.findIndex(hasText) : -1;
+      // With `headingItems`, the items after the first that belong to the heading come along too.
+      const headingRest =
+        head < 0
+          ? 0
+          : rest
+              .slice(head + 1)
+              .filter(hasText)
+              .slice(0, Math.max((field.headingItems ?? 1) - 1, 0))
+              .reduce((sum, item) => sum + space + this.itemHeight(item, itemWidth), 0);
+
+      if (aside && filled) {
         // Both columns start together, so the entry moves to the next page as a whole when its
-        // first lines don't fit here.
+        // heading and first lines don't fit here.
         const first = items.find((item) => item !== asideItem && hasText(item));
         const firstLine = this.lineHeight(
           this.fontSize(first?.type === 'text' ? first.item.fontSize : 'md'),
         );
-        const need = first ? firstLine + this.entryHeadHeight(first, itemWidth) : firstLine;
+        const need = first
+          ? firstLine + this.entryHeadHeight(first, itemWidth) + headingRest
+          : firstLine;
         if (this.isOverflowing(currentY - need)) {
           currentPageIndex = await this.nextPage(currentPageIndex);
           currentY = this.pageTop;
@@ -644,21 +657,6 @@ export class ResumePDFService extends ContentToPdfService {
           asideEnd = { y: result.currentY - space, pageIndex: result.pageIndex };
         }
       }
-
-      // An entry (one object of a list, such as a job) keeps its heading with the start of its
-      // content: its first line only goes on this page if the rest of it and a little of what
-      // follows fit too.
-      const rest = asideItem ? items.filter((item) => item !== asideItem) : items;
-      const head = field.source === 'objects' && rest.length > 1 ? rest.findIndex(hasText) : -1;
-      // With `headingItems`, the items after the first that belong to the heading come along too.
-      const headingRest =
-        head < 0
-          ? 0
-          : rest
-              .slice(head + 1)
-              .filter(hasText)
-              .slice(0, Math.max((field.headingItems ?? 1) - 1, 0))
-              .reduce((sum, item) => sum + space + this.itemHeight(item, itemWidth), 0);
 
       for (const [index, item] of rest.entries()) {
         // A missing optional value (no description, say) takes no space: no margins, no gap.
@@ -727,17 +725,25 @@ export class ResumePDFService extends ContentToPdfService {
     const content = 2 * this.lineHeight(this.fontSize('md'));
     if (item.type !== 'text') return content;
 
-    const { text, fontSize, font = 'regular', family, leading, icon } = item.item;
-    const lines = this.getTextLines({
+    const { fontSize, leading } = item.item;
+    return (
+      (this.textLineCount(item, maxWidth) - 1) * this.lineHeight(this.fontSize(fontSize), leading) +
+      content
+    );
+  }
+
+  /** How many lines a text item wraps to in `width`, as `writeMultiLine` wraps it. */
+  protected textLineCount(item: TextItem<LineParams>, width: number) {
+    const { text, fontSize, font = 'regular', family, leading, icon, bullet } = item.item;
+    return this.getTextLines({
       text,
       size: fontSize,
       font: this.getFont(font, family),
       leading: leading || this.$leading,
       maxWidth:
-        Math.min(item.item.maxWidth || maxWidth, maxWidth) -
-        this.prefixWidth({ text, icon, fontSize }),
-    });
-    return (lines.length - 1) * this.lineHeight(this.fontSize(fontSize), leading) + content;
+        Math.min(item.item.maxWidth || width, width) -
+        this.prefixWidth({ text, icon, bullet, fontSize }),
+    }).length;
   }
 
   async writeItem(
