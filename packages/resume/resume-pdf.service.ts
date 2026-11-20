@@ -12,7 +12,9 @@ function mapStrings<T>(value: T, fn: (text: string) => string): T {
   if (typeof value === 'string') return fn(value) as T;
   if (Array.isArray(value)) return value.map((item) => mapStrings(item, fn)) as T;
   if (value && typeof value === 'object') {
-    return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, mapStrings(item, fn)])) as T;
+    return Object.fromEntries(
+      Object.entries(value).map(([key, item]) => [key, mapStrings(item, fn)]),
+    ) as T;
   }
   return value;
 }
@@ -48,7 +50,16 @@ export class ResumePDFService extends ContentToPdfService {
     watermark,
     customFont,
   }: CreateParams = DEFAULT_CONFIG) {
-    await super.init({ screen, fontSize, leading, color, colors, isPreview, watermark, customFont });
+    await super.init({
+      screen,
+      fontSize,
+      leading,
+      color,
+      colors,
+      isPreview,
+      watermark,
+      customFont,
+    });
 
     // Download a custom font now so the first render doesn't wait for it. Only the bytes are cached:
     // each render embeds them into its own document. Without a custom font, nothing is fetched.
@@ -72,7 +83,10 @@ export class ResumePDFService extends ContentToPdfService {
       // With the standard fonts, characters they can't encode are replaced before layout, so text is
       // measured and drawn the same way. Template strings (labels, separators) go through it too.
       const encodable = (text: string) => this.encodable(text);
-      const fields = mapDataToTemplate(mapStrings(data, encodable), mapStrings(template, encodable));
+      const fields = mapDataToTemplate(
+        mapStrings(data, encodable),
+        mapStrings(template, encodable),
+      );
 
       await this.writeToPDF(fields.groups);
 
@@ -103,7 +117,12 @@ export class ResumePDFService extends ContentToPdfService {
 
   async writeGroup(
     group: Group<Item>,
-    { y, x, containerWidth = this.$maxWidth, pageIndex }: Coords & { containerWidth?: number; pageIndex: number },
+    {
+      y,
+      x,
+      containerWidth = this.$maxWidth,
+      pageIndex,
+    }: Coords & { containerWidth?: number; pageIndex: number },
   ): Promise<{ currentY: number; currentX: number; width: number; pageIndex: number }> {
     let currentY = y;
     let currentX = x;
@@ -187,7 +206,10 @@ export class ResumePDFService extends ContentToPdfService {
     return { currentY, currentX, width: maxWidth + this.$paddingX, pageIndex: currentPageIndex };
   }
 
-  async writeField(field: Field<Item>, { y, x, pageIndex }: { y: number; x: number; pageIndex: number }) {
+  async writeField(
+    field: Field<Item>,
+    { y, x, pageIndex }: { y: number; x: number; pageIndex: number },
+  ) {
     const { items, gap, maxWidth = this.$maxWidth, label, separator } = field;
 
     let currentY = y;
@@ -246,7 +268,10 @@ export class ResumePDFService extends ContentToPdfService {
     return { currentY, currentX: x, pageIndex: currentPageIndex };
   }
 
-  async writeItem(item: Item, { y, x, pageIndex, maxWidth }: Coords & { pageIndex: number; maxWidth: number }) {
+  async writeItem(
+    item: Item,
+    { y, x, pageIndex, maxWidth }: Coords & { pageIndex: number; maxWidth: number },
+  ) {
     let currentY = y;
     let currentX = x;
     let currentPageIndex = pageIndex;
@@ -357,7 +382,8 @@ export class ResumePDFService extends ContentToPdfService {
       currentY = result.pageIndex === currentPageIndex ? currentY : result.nextY + result.height;
       currentY = label.direction === 'horizontal' ? currentY : result.nextY - this.spacing(bottom);
       currentX = label.direction === 'horizontal' ? labelWidth : currentX;
-      currentMaxWidth = label.direction === 'horizontal' ? currentMaxWidth - labelWidth : currentMaxWidth;
+      currentMaxWidth =
+        label.direction === 'horizontal' ? currentMaxWidth - labelWidth : currentMaxWidth;
       currentPageIndex = result.pageIndex;
     }
 

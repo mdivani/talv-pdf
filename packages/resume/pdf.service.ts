@@ -44,7 +44,9 @@ export type Config = {
 };
 
 /** Options that can be overridden for a single render. */
-export type RenderOptions = Partial<Pick<Config, 'color' | 'colors' | 'fontSize' | 'leading' | 'customFont'>>;
+export type RenderOptions = Partial<
+  Pick<Config, 'color' | 'colors' | 'fontSize' | 'leading' | 'customFont'>
+>;
 
 export const DEFAULT_COLORS: Record<Colors, string> = {
   primary: '#1C1C1C',
@@ -79,7 +81,10 @@ const STANDARD_FONTS: Record<FontType, StandardFonts> = {
 const fontCacheKey = (font: CustomFont) => JSON.stringify([font.name, font.fonts]);
 
 /** Folds the `color` shorthand into `colors` so layers can be merged key by key. */
-const normalizeColors = ({ color, colors }: Pick<Partial<Config>, 'color' | 'colors'>): ColorOverrides => ({
+const normalizeColors = ({
+  color,
+  colors,
+}: Pick<Partial<Config>, 'color' | 'colors'>): ColorOverrides => ({
   ...(color ? { secondary: color } : {}),
   ...colors,
 });
@@ -220,7 +225,16 @@ export class BasePDFService {
     return { height, width, nextY: y - height, nextX: x, pageIndex };
   }
 
-  justifyText({ justify, text, containerWidth, maxWidth, size, font, wordBreaks, leading }: JustifyTextParams) {
+  justifyText({
+    justify,
+    text,
+    containerWidth,
+    maxWidth,
+    size,
+    font,
+    wordBreaks,
+    leading,
+  }: JustifyTextParams) {
     const lines = this.getTextLines({ text, maxWidth, size, font, wordBreaks, leading });
 
     const widths = lines.map((line) => this.getTextWidth({ text: line, size, font, leading }));
@@ -233,7 +247,15 @@ export class BasePDFService {
   }
 
   /** Sets every layout and color field from a full config. Derived sizes are recomputed here so they never go stale. */
-  protected applyConfig({ screen, fontSize, leading, color, colors, isPreview = true, watermark }: Config) {
+  protected applyConfig({
+    screen,
+    fontSize,
+    leading,
+    color,
+    colors,
+    isPreview = true,
+    watermark,
+  }: Config) {
     this.$fontScale = fontSize;
     this.$leading = leading;
     this.$width = screen.width;
@@ -276,7 +298,9 @@ export class BasePDFService {
     this.$document.registerFontkit(fontkit);
     const doc = this.$document;
     const standard = await Promise.all(
-      (Object.keys(STANDARD_FONTS) as FontType[]).map(async (type) => [type, await doc.embedFont(STANDARD_FONTS[type])] as const),
+      (Object.keys(STANDARD_FONTS) as FontType[]).map(
+        async (type) => [type, await doc.embedFont(STANDARD_FONTS[type])] as const,
+      ),
     );
     this.$fonts = Object.fromEntries(standard) as Partial<Record<FontType, PDFFont>>;
     this.$defaultFont = this.$fonts.regular;
@@ -358,7 +382,9 @@ export class BasePDFService {
 
     const fontBytes = await this.loadFonts(customFont);
     const embedded = await Promise.all(
-      fontBytes.map(async ({ type, arrayBuffer }) => [type, await doc.embedFont(arrayBuffer)] as const),
+      fontBytes.map(
+        async ({ type, arrayBuffer }) => [type, await doc.embedFont(arrayBuffer)] as const,
+      ),
     );
 
     this.$fonts = Object.fromEntries(embedded) as Partial<Record<FontType, PDFFont>>;
@@ -387,7 +413,6 @@ export class BasePDFService {
     const page = await this.$document.addPage([this.$width, this.$height]);
 
     if (this.$watermark) {
-
       if (this.$watermark.url) {
         const logoBytes = await fetchImage(this.$watermark.url);
         const logo = await this.$document.embedPng(logoBytes as unknown as Uint8Array);
@@ -401,7 +426,9 @@ export class BasePDFService {
       }
 
       if (this.$watermark.text) {
-        const color = this.$watermark.color ? fromHexStr(this.$watermark.color) : this.$colors.primary;
+        const color = this.$watermark.color
+          ? fromHexStr(this.$watermark.color)
+          : this.$colors.primary;
         page.drawText(this.encodable(this.$watermark.text), {
           x: 28,
           y: 10,
@@ -467,7 +494,8 @@ export class BasePDFService {
 
     currentWidth = textWidth;
     currentY = currentY - textHeight;
-    const positionX = x + justifyLine({ justify, textWidth: currentWidth, containerWidth: maxWidth });
+    const positionX =
+      x + justifyLine({ justify, textWidth: currentWidth, containerWidth: maxWidth });
 
     if (this.isOverflowing(currentY - offset)) {
       currentPageIndex = await this.nextPage(currentPageIndex);
@@ -575,7 +603,10 @@ export class BasePDFService {
     let width = 0;
 
     for (const [index, line] of lines.entries()) {
-      const prefixes = index === 0 ? { icon: options.icon, bullet: options.bullet } : { icon: null, bullet: false };
+      const prefixes =
+        index === 0
+          ? { icon: options.icon, bullet: options.bullet }
+          : { icon: null, bullet: false };
 
       const result = await this.writeLine({
         ...options,
@@ -652,7 +683,10 @@ export class BasePDFService {
         0,
         ...filteredTexts.map((txt) => this.lineHeight(this.fontSize(txt.fontSize), txt.leading)),
       );
-      if (filteredTexts.length && this.isOverflowing(positionY - rowHeight - (filteredTexts[0].offset ?? 0))) {
+      if (
+        filteredTexts.length &&
+        this.isOverflowing(positionY - rowHeight - (filteredTexts[0].offset ?? 0))
+      ) {
         currentPageIndex = await this.nextPage(currentPageIndex);
         positionY = this.pageTop;
       }
@@ -754,7 +788,14 @@ export class BasePDFService {
     };
   }
 
-  drawStreightLine({ x, y, width, size = 'sm', color: colorType = 'secondary', page }: DrawLineParams) {
+  drawStreightLine({
+    x,
+    y,
+    width,
+    size = 'sm',
+    color: colorType = 'secondary',
+    page,
+  }: DrawLineParams) {
     const thickness = this.separator(size);
     const color = this.color(colorType);
 
@@ -810,12 +851,11 @@ export class BasePDFService {
 
     if (count === 0) {
       this.$pages = [];
-      return
+      return;
     }
 
     this.$document.removePage(0);
 
     this.removeAllPages();
-
   }
 }
