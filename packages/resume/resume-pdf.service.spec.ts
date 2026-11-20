@@ -144,6 +144,24 @@ describe('custom font subsetting', () => {
     expect(subsetOptions).toEqual([true, true, true, true, true]);
   });
 
+  it('embeds custom fonts without ligatures', async () => {
+    const features: unknown[] = [];
+    (PDFDocument.prototype.embedFont as jest.Mock).mockImplementation(function (
+      this: PDFDocument,
+      font,
+      options,
+    ) {
+      if (typeof font === 'string') return realEmbed.call(this, font, options);
+      features.push(options?.features);
+      return realEmbed.call(this, StandardFonts.Helvetica);
+    });
+    const service = new ResumePDFService();
+    await service.create({ isPreview: false, customFont: font() });
+    await service.generate({ data: entry, template: talvio });
+
+    expect(features).toEqual(Array(5).fill({ liga: false }));
+  });
+
   it('never subsets the bundled Inter, which the subsetter breaks', () => {
     expect(interFont.subset).not.toBe(true);
   });

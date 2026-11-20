@@ -14,5 +14,5 @@
       "@resume/*": ["../packages/resume/*"]
     }
   },
-  "include": ["src", "vite.config.ts"]
+  "include": ["src", "templates", "vite.config.ts"]
 }

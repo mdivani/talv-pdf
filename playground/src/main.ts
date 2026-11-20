@@ -7,6 +7,7 @@ import {
 import workerSrc from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?url';
 import type { ResumeData, Size, Template } from '@resume/types';
 import * as initialRegistry from './registry';
+import { FONT_CHOICES, type Font } from './fonts';
 
 GlobalWorkerOptions.workerSrc = workerSrc;
 
@@ -23,7 +24,6 @@ const sharedWorker = () => {
 };
 
 type Mode = 'single' | 'fixtures' | 'templates';
-type Font = 'standard' | 'inter';
 
 type State = {
   mode: Mode;
@@ -46,11 +46,16 @@ type Result = {
   task?: PDFDocumentLoadingTask;
 };
 
+/** The accents of the colour picker in the Talvio web app. */
 const SWATCHES: Record<string, string> = {
   Talvio: '#005BA2',
   Ember: '#670000',
   Mint: '#015408',
   Modern: '#7A7A7A',
+  Black: '#1B1B1B',
+  Brown: '#763900',
+  Red: '#983805',
+  Yellow: '#BA8E23',
 };
 
 const DEFAULT_STATE: State = {
@@ -220,7 +225,7 @@ async function render() {
             color: state.color,
             fontSize: state.fontSize,
             leading: state.leading,
-            customFont: state.font === 'inter' ? registry.interFont : undefined,
+            fonts: FONT_CHOICES[state.font] ?? {},
           },
         });
         next.push({ job, bytes, ms: performance.now() - started });

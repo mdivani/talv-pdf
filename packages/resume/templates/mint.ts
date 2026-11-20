@@ -313,6 +313,14 @@ const projectsFields: Field<ItemStyle>[] = [
 ];
 
 export const mint: Template = {
+  defaultSectionOrder: [
+    'summary',
+    'skills',
+    'experience',
+    'education',
+    'projects',
+    'recommendations',
+  ],
   groups: [
     {
       width: 'full',
@@ -325,10 +333,12 @@ export const mint: Template = {
     },
     {
       width: 'full',
+      section: 'summary',
       fields: summaryFields,
     },
     {
       width: 'full',
+      section: 'skills',
       separator: 'secondary',
       gap: 'md',
       fields: [
@@ -411,6 +421,7 @@ export const mint: Template = {
     },
     {
       width: 'full',
+      section: 'experience',
       separator: 'secondary',
       gap: 'md',
       label: {
@@ -424,6 +435,7 @@ export const mint: Template = {
     },
     {
       width: 'full',
+      section: 'education',
       separator: 'secondary',
       label: {
         text: 'Education',
@@ -437,6 +449,7 @@ export const mint: Template = {
     },
     {
       width: 'full',
+      section: 'projects',
       separator: 'secondary',
       label: {
         text: 'Personal Projects',
@@ -450,6 +463,7 @@ export const mint: Template = {
     },
     {
       width: 'full',
+      section: 'recommendations',
       separator: 'secondary',
       label: {
         text: 'Recommendations',

@@ -235,7 +235,12 @@ export class ContentToPdfService extends PDFIcons {
     const prefix = this.prefixWidth({ text: '', bullet, fontSize });
     const available = Math.max(maxWidth - prefix, 1) + 0.5;
     const widthOf = (text: string, font: FontType) =>
-      this.getTextWidth({ text, font: this.getFont(font), size: fontSize, leading: this.$leading });
+      this.getTextWidth({
+        text,
+        font: this.getFont(font, options.family),
+        size: fontSize,
+        leading: this.$leading,
+      });
 
     // Fill lines greedily, word by word. Each line is a list of segments; neighbours with the same
     // font are merged.
@@ -252,6 +257,9 @@ export class ContentToPdfService extends PDFIcons {
       const line = lines[lines.length - 1];
       const last = line[line.length - 1];
       if (last) last.text = last.text.trimEnd();
+      // A segment that was only the space before the break would draw nothing and report no
+      // height, so the next line would start on top of this one.
+      if (last && !last.text) line.pop();
       lines.push([]);
       used = 0;
     };

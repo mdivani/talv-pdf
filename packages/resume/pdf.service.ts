@@ -1,6 +1,28 @@
-import { PDFDocument, PDFPage, StandardFonts, PDFFont, RGB, breakTextIntoLines } from 'pdf-lib';
+import {
+  PDFArray,
+  PDFDocument,
+  PDFOperator,
+  PDFPage,
+  StandardFonts,
+  PDFFont,
+  RGB,
+  appendBezierCurve,
+  breakTextIntoLines,
+  closePath,
+  fill,
+  lineTo,
+  moveTo,
+  popGraphicsState,
+  pushGraphicsState,
+  rectangle,
+  rgb,
+  setFillingRgbColor,
+  setLineWidth,
+  setStrokingRgbColor,
+  stroke,
+} from 'pdf-lib';
 import fontkit from '@pdf-lib/fontkit';
-import { fromHexStr, getIconPath, getLinkIconType } from './utils';
+import { contrastRatio, fromHexStr, getIconPath, getLinkIconType, mixColors } from './utils';
 import { fetchCustomFont, fetchImage } from './assets';
 import {
   DrawCircleParams,
@@ -13,6 +35,10 @@ import {
   WriteRowParams,
   WriteTextParams,
   Colors,
+  Color,
+  FontFamily,
+  Background,
+  Padding,
   TextLinesParams,
   TextWidthParams,
   Coords,
@@ -20,6 +46,7 @@ import {
   CustomFont,
   Watermark,
   IconTypes,
+  Justify,
 } from './types';
 import { getFontSize, getLineHeight, getSeparatorSize, getSpacing, justifyLine } from './utils';
 import { iconScaleMap } from './constants';
@@ -27,8 +54,13 @@ import { iconScaleMap } from './constants';
 /** Hex colors (for example `'#00549F'`) for any of the template color slots. */
 export type ColorOverrides = Partial<Record<Colors, string>>;
 
+/** Font files for each typeface role. Roles without files use the PDF standard fonts. */
+export type FontFiles = Partial<Record<FontFamily, CustomFont>>;
+
 export type Config = {
+  /** Shorthand for `fonts.body`. `fonts.body` wins when both are set. */
   customFont?: CustomFont;
+  fonts?: FontFiles;
   watermark?: Watermark;
   screen: {
     width: number;
@@ -46,7 +78,7 @@ export type Config = {
 
 /** Options that can be overridden for a single render. */
 export type RenderOptions = Partial<
-  Pick<Config, 'color' | 'colors' | 'fontSize' | 'leading' | 'customFont'>
+  Pick<Config, 'color' | 'colors' | 'fontSize' | 'leading' | 'customFont' | 'fonts'>
 >;
 
 export const DEFAULT_COLORS: Record<Colors, string> = {
@@ -71,13 +103,44 @@ export const DEFAULT_CONFIG: Config = {
 type FontBytes = Array<{ type: FontType; arrayBuffer: ArrayBuffer }>;
 
 /** The PDF standard fonts used when no custom font is set. Every PDF viewer has them, so nothing is downloaded. */
-const STANDARD_FONTS: Record<FontType, StandardFonts> = {
-  regular: StandardFonts.Helvetica,
-  semibold: StandardFonts.HelveticaBold,
-  bold: StandardFonts.HelveticaBold,
-  italic: StandardFonts.HelveticaOblique,
-  'bold-italic': StandardFonts.HelveticaBoldOblique,
+const STANDARD_FONTS: Record<FontFamily, Record<FontType, StandardFonts>> = {
+  body: {
+    regular: StandardFonts.Helvetica,
+    semibold: StandardFonts.HelveticaBold,
+    bold: StandardFonts.HelveticaBold,
+    italic: StandardFonts.HelveticaOblique,
+    'bold-italic': StandardFonts.HelveticaBoldOblique,
+  },
+  serif: {
+    regular: StandardFonts.TimesRoman,
+    semibold: StandardFonts.TimesRomanBold,
+    bold: StandardFonts.TimesRomanBold,
+    italic: StandardFonts.TimesRomanItalic,
+    'bold-italic': StandardFonts.TimesRomanBoldItalic,
+  },
+  mono: {
+    regular: StandardFonts.Courier,
+    semibold: StandardFonts.CourierBold,
+    bold: StandardFonts.CourierBold,
+    italic: StandardFonts.CourierOblique,
+    'bold-italic': StandardFonts.CourierBoldOblique,
+  },
 };
+
+type FontSet = Partial<Record<FontType, PDFFont>>;
+
+/** A box to draw behind the page content, recorded during layout and drawn by `save()`. */
+export type BackgroundBox = {
+  pageIndex: number;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  background: Background;
+};
+
+/** Other downloaded font families kept besides the base config's fonts. */
+const FONT_CACHE_SIZE = 3;
 
 const fontCacheKey = (font: CustomFont) => JSON.stringify([font.name, font.fonts]);
 
@@ -89,6 +152,33 @@ const normalizeColors = ({
   ...(color ? { secondary: color } : {}),
   ...colors,
 });
+
+/** Folds the `customFont` shorthand into `fonts`, like `normalizeColors`. */
+const normalizeFonts = ({
+  customFont,
+  fonts,
+}: Pick<Partial<Config>, 'customFont' | 'fonts'>): FontFiles => ({
+  ...(customFont ? { body: customFont } : {}),
+  ...fonts,
+});
+
+const WHITE = rgb(1, 1, 1);
+const BLACK = rgb(0, 0, 0);
+
+/** The colours a template can use, from the three configured ones. */
+function deriveColors(base: Record<Colors, RGB>): Record<Color, RGB> {
+  // Text on the accent: white, or else the text colour, if either reaches 4.5:1. Mid-tone accents
+  // (a mid grey) reach it with neither, so then black or white, whichever contrasts more.
+  const onSecondary =
+    [WHITE, base.primary].find((text) => contrastRatio(text, base.secondary) >= 4.5) ??
+    (contrastRatio(BLACK, base.secondary) > contrastRatio(WHITE, base.secondary) ? BLACK : WHITE);
+  return {
+    ...base,
+    onSecondary,
+    secondaryTint: mixColors(base.secondary, WHITE, 0.12),
+    white: WHITE,
+  };
+}
 
 /** Characters after which a long word may break, in order of preference. */
 const SOFT_BREAKS = /[-/.@_?&=,]/;
@@ -135,21 +225,29 @@ export class BasePDFService {
   protected $height = 842;
   protected $maxWidth = 555;
   protected $maxHeight = 802;
-  protected $fonts: Partial<Record<FontType, PDFFont>> = {};
+  /** Fonts of the `body` family. */
+  protected $fonts: FontSet = {};
+  /** Fonts of every family embedded in the current document. */
+  protected $families: Partial<Record<FontFamily, FontSet>> = {};
+  /** Family used by text that doesn't name one: the template's `family`. */
+  protected $family: FontFamily = 'body';
+  /** Families the current render draws with the standard fonts. */
+  protected $standardFamilies = new Set<FontFamily>(['body']);
+  /** Boxes to draw behind the content of the current document. */
+  protected $backgrounds: BackgroundBox[] = [];
   protected $fontScale: Size = 'md';
   protected $leading: Size = 'md';
-  protected $colors: Record<Colors, RGB> = {
+  protected $colors: Record<Color, RGB> = deriveColors({
     primary: fromHexStr(DEFAULT_COLORS.primary),
     secondary: fromHexStr(DEFAULT_COLORS.secondary),
     neutral: fromHexStr(DEFAULT_COLORS.neutral),
-  };
+  });
   protected $paddingX = 20;
   protected $paddingY = 20;
   protected $safeArea = 40;
   protected $watermark?: Watermark;
 
   protected $isPreview = true;
-  protected $fontFamily = 'Helvetica';
 
   protected $document: PDFDocument | null = null;
   protected $pages: PDFPage[] = [];
@@ -159,8 +257,8 @@ export class BasePDFService {
 
   /** Settings from the constructor or `init()`. Per-render overrides are layered on top and never written back. */
   protected $baseConfig: Config;
-  /** Typeface embedded into every new document unless a render overrides it. */
-  protected $baseFont?: CustomFont;
+  /** Font files embedded into every new document unless a render overrides them. */
+  protected $baseFonts: FontFiles = {};
   /** Downloaded font files, so a fresh document per render doesn't re-download them. */
   private $fontCache = new Map<string, FontBytes>();
 
@@ -185,8 +283,8 @@ export class BasePDFService {
     return this.$defaultFont;
   }
 
-  getFont(type: FontType = 'regular') {
-    const font = this.$fonts?.[type] || this.defaultFont;
+  getFont(type: FontType = 'regular', family: FontFamily = this.$family) {
+    const font = this.$families[family]?.[type] || this.$fonts?.[type] || this.defaultFont;
 
     if (!font) throw new Error('Font is not initialised');
 
@@ -201,12 +299,30 @@ export class BasePDFService {
     return getLineHeight(fontSize, leading);
   }
 
-  color(color: Colors) {
+  color(color: Color) {
     return this.$colors[color];
   }
 
   spacing(size?: Size) {
     return size ? getSpacing(size, this.$fontScale) : 0;
+  }
+
+  /**
+   * How far letters reach below the baseline, roughly. Text sits on its baseline, so a box around
+   * text leaves this much room under the last line for descenders (g, p, y).
+   */
+  descent(size: Size) {
+    return this.fontSize(size) * 0.22;
+  }
+
+  /** Padding in points on each axis. */
+  padding(padding?: Padding) {
+    if (!padding) return { x: 0, y: 0 };
+    if (typeof padding === 'string') {
+      const space = this.spacing(padding);
+      return { x: space, y: space };
+    }
+    return { x: this.spacing(padding.x), y: this.spacing(padding.y) };
   }
 
   separator(size: Size = 'sm') {
@@ -317,11 +433,11 @@ export class BasePDFService {
     this.$watermark = watermark;
 
     const hex = { ...DEFAULT_COLORS, ...normalizeColors({ color, colors }) };
-    this.$colors = {
+    this.$colors = deriveColors({
       primary: fromHexStr(hex.primary),
       secondary: fromHexStr(hex.secondary),
       neutral: fromHexStr(hex.neutral),
-    };
+    });
   }
 
   /** Layers per-render options over the base config without mutating it. Undefined options are ignored. */
@@ -332,7 +448,8 @@ export class BasePDFService {
       ...base,
       fontSize: options.fontSize ?? base.fontSize,
       leading: options.leading ?? base.leading,
-      customFont: options.customFont ?? base.customFont,
+      customFont: undefined,
+      fonts: { ...normalizeFonts(base), ...normalizeFonts(options) },
       colors: { ...normalizeColors(base), ...normalizeColors(options) },
     };
   }
@@ -345,21 +462,32 @@ export class BasePDFService {
   protected async newDocument() {
     this.$document = await PDFDocument.create();
     this.$document.registerFontkit(fontkit);
-    const doc = this.$document;
-    const standard = await Promise.all(
-      (Object.keys(STANDARD_FONTS) as FontType[]).map(
-        async (type) => [type, await doc.embedFont(STANDARD_FONTS[type])] as const,
-      ),
-    );
-    this.$fonts = Object.fromEntries(standard) as Partial<Record<FontType, PDFFont>>;
+    this.$families = {};
+    this.embedStandardFamily('body');
+    this.$standardFamilies = new Set(['body']);
     this.$defaultFont = this.$fonts.regular;
-    this.$fontFamily = 'Helvetica';
     this.$pages = [];
+    this.$backgrounds = [];
+    this.$fullHeight = [];
   }
 
-  /** True while the document uses the standard fonts, that is when no custom font is embedded. */
+  /** Embeds the standard fonts of a family (Times for `serif`, Courier for `mono`). */
+  protected embedStandardFamily(family: FontFamily) {
+    if (!this.$document) throw new Error('Initialise document first');
+    const doc = this.$document;
+    const fonts = STANDARD_FONTS[family];
+    this.$families[family] = Object.fromEntries(
+      (Object.keys(fonts) as FontType[]).map((type) => [type, doc.embedStandardFont(fonts[type])]),
+    ) as FontSet;
+    if (family === 'body') this.$fonts = this.$families[family] as FontSet;
+  }
+
+  /**
+   * True when the current render draws any text with the standard fonts. Their character set is
+   * limited, so text is then made encodable (see `encodable`).
+   */
   protected get usesStandardFonts() {
-    return this.$fontFamily === 'Helvetica';
+    return this.$standardFamilies.size > 0;
   }
 
   /**
@@ -383,7 +511,7 @@ export class BasePDFService {
 
   async init(config: Config = DEFAULT_CONFIG) {
     this.$baseConfig = { ...DEFAULT_CONFIG, ...config };
-    this.$baseFont = this.$baseConfig.customFont;
+    this.$baseFonts = normalizeFonts(this.$baseConfig);
     this.applyConfig(this.$baseConfig);
 
     await this.newDocument();
@@ -391,9 +519,10 @@ export class BasePDFService {
 
   /**
    * Starts a new render in a fresh document. `options` apply to this render only; the next call
-   * starts again from the values given to `init()`.
+   * starts again from the values given to `init()`. `families` are the typeface roles the render
+   * draws with; `body` is always embedded.
    */
-  async update(options: RenderOptions = {}) {
+  async update(options: RenderOptions = {}, families: FontFamily[] = ['body']) {
     if (!this.$document) throw new Error('Initialise document first');
 
     const config = this.resolveConfig(options);
@@ -401,30 +530,54 @@ export class BasePDFService {
 
     await this.newDocument();
 
-    const font = options.customFont ?? this.$baseFont;
-    if (font) await this.embedFonts(font);
+    const fonts = config.fonts ?? {};
+    this.$standardFamilies = new Set();
+    const wanted = [...new Set<FontFamily>(['body', ...families])];
+    // Download the families' files together, each typeface once; embedding then reads the cache.
+    const typefaces = new Map(
+      wanted.flatMap((family) => {
+        const font = fonts[family];
+        return font ? [[fontCacheKey(font), font] as const] : [];
+      }),
+    );
+    await Promise.all([...typefaces.values()].map((font) => this.loadFonts(font)));
+    for (const family of wanted) {
+      const files = fonts[family];
+      if (files) await this.embedFonts(files, family);
+      else if (family !== 'body') this.embedStandardFamily(family);
+      if (!files && families.includes(family)) this.$standardFamilies.add(family);
+    }
 
     await this.addPage();
   }
 
-  /** Downloads a font family once and keeps it for later documents. Only the base font and the most recent other font are kept. */
+  /**
+   * Downloads a font family once and keeps it for later documents. The base config's fonts are
+   * always kept, and the most recently used few others.
+   */
   protected async loadFonts(customFont: CustomFont): Promise<FontBytes> {
     const key = fontCacheKey(customFont);
     const cached = this.$fontCache.get(key);
-    if (cached) return cached;
+    if (cached) {
+      // Mark it as recently used.
+      this.$fontCache.delete(key);
+      this.$fontCache.set(key, cached);
+      return cached;
+    }
 
     const bytes = await fetchCustomFont(customFont.fonts);
-
-    const baseKey = this.$baseFont ? fontCacheKey(this.$baseFont) : undefined;
-    for (const existing of this.$fontCache.keys()) {
-      if (existing !== baseKey) this.$fontCache.delete(existing);
-    }
     this.$fontCache.set(key, bytes);
+
+    const baseKeys = new Set(Object.values(this.$baseFonts).map(fontCacheKey));
+    const others = [...this.$fontCache.keys()].filter((existing) => !baseKeys.has(existing));
+    for (const existing of others.slice(0, Math.max(others.length - FONT_CACHE_SIZE, 0))) {
+      this.$fontCache.delete(existing);
+    }
 
     return bytes;
   }
 
-  async embedFonts(customFont: CustomFont) {
+  async embedFonts(customFont: CustomFont, family: FontFamily = 'body') {
     if (!this.$document) throw new Error('Initialise document first');
 
     const doc = this.$document; // ts workaround to avoid type error
@@ -433,14 +586,23 @@ export class BasePDFService {
     const embedded = await Promise.all(
       fontBytes.map(
         async ({ type, arrayBuffer }) =>
-          [type, await doc.embedFont(arrayBuffer, { subset: customFont.subset === true })] as const,
+          [
+            type,
+            // Ligatures off: pdf-lib draws ligature glyphs (such as "ft" in Source Serif 4 italic)
+            // with a gap after them, and they make the text harder to extract.
+            await doc.embedFont(arrayBuffer, {
+              subset: customFont.subset === true,
+              features: { liga: false },
+            }),
+          ] as const,
       ),
     );
 
-    this.$fonts = Object.fromEntries(embedded) as Partial<Record<FontType, PDFFont>>;
-    this.$fontFamily = customFont.name;
+    const fonts = Object.fromEntries(embedded) as FontSet;
+    this.$families[family] = fonts;
+    if (family === 'body') this.$fonts = fonts;
 
-    return this.$fonts;
+    return fonts;
   }
 
   /** Where content starts on every page: the same top margin as the first page. */
@@ -527,6 +689,8 @@ export class BasePDFService {
     text,
     icon,
     color,
+    iconColor = 'secondary',
+    family,
     font: fontStyle,
     fontSize: size,
     leading,
@@ -544,7 +708,7 @@ export class BasePDFService {
     let currentWidth = 0;
     let currentY = y;
 
-    const font = this.getFont(fontStyle);
+    const font = this.getFont(fontStyle, family);
 
     if (!font) throw new Error('Default font is not initialised');
 
@@ -589,7 +753,7 @@ export class BasePDFService {
         x: positionX,
         // The top of the line where it was drawn, which is not `y` if the line moved to a new page.
         y: currentY + textHeight,
-        color: 'secondary',
+        color: iconColor,
         icon: selectedIcon,
         page,
         size,
@@ -648,6 +812,7 @@ export class BasePDFService {
       text = '',
       fontSize: size,
       font: fontStyle,
+      family,
       leading,
       maxWidth = this.$maxWidth,
       wordBreaks = [' '],
@@ -658,7 +823,7 @@ export class BasePDFService {
 
     let currentPageIndex = pageIndex;
 
-    const font = this.getFont(fontStyle);
+    const font = this.getFont(fontStyle, family);
 
     if (!font) throw new Error('Default font is not initialised');
 
@@ -747,10 +912,17 @@ export class BasePDFService {
   }
 
   /** Width of `text` drawn on one line with its icon, as `writeLine` reports it. */
-  protected lineWidth({ text, font = 'regular', fontSize, icon, leading }: WriteLineParams) {
+  protected lineWidth({
+    text,
+    font = 'regular',
+    family,
+    fontSize,
+    icon,
+    leading,
+  }: WriteLineParams) {
     const textWidth = this.getTextWidth({
       text,
-      font: this.getFont(font),
+      font: this.getFont(font, family),
       size: fontSize,
       leading: leading || this.$leading,
     });
@@ -771,9 +943,12 @@ export class BasePDFService {
       x,
       y,
       gap,
-      separator = '',
+      chip,
       pageIndex = this.currentPageIndex,
     } = options;
+    // Chips are boxes of their own: no separator between them.
+    const separator = chip ? '' : (options.separator ?? '');
+    const pad = chip ? this.padding(chip.padding ?? { x: 'md', y: 'sm' }) : { x: 0, y: 0 };
 
     // Each value keeps its text without the separator; the separator is only drawn between values
     // that share a line, never at the start of one.
@@ -787,11 +962,14 @@ export class BasePDFService {
     const textOf = (i: number, startsLine: boolean) =>
       startsLine ? values[i].text : separator + values[i].text;
     const widthOf = (i: number, startsLine: boolean) =>
-      this.lineWidth({ ...values[i], text: textOf(i, startsLine) });
+      this.lineWidth({ ...values[i], text: textOf(i, startsLine) }) + 2 * pad.x;
     const lineHeights = values.map((value) =>
       this.lineHeight(this.fontSize(value.fontSize), value.leading),
     );
-    const rowLineHeight = Math.max(...lineHeights);
+    const descents = values.map((value) => (chip ? this.descent(value.fontSize) : 0));
+    const rowLineHeight = Math.max(...lineHeights) + 2 * pad.y + Math.max(...descents);
+    // Lines of chips are spaced like the chips themselves.
+    const lineGap = chip ? space : 0;
 
     let top = y;
     let currentPageIndex = pageIndex;
@@ -811,30 +989,41 @@ export class BasePDFService {
       atX: number,
       lineTop: number,
       maxWidth: number,
-      justify: 'left' | 'center' = 'left',
+      justify: Justify = 'left',
     ) => {
       const result = await this.writeMultiLine({
         ...values[i],
         text: textOf(i, startsLine),
         justify,
-        x: atX,
-        y: lineTop - (rowLineHeight - lineHeights[i]),
+        x: atX + pad.x,
+        y: lineTop - pad.y - (rowLineHeight - 2 * pad.y - Math.max(...descents) - lineHeights[i]),
         pageIndex: currentPageIndex,
-        maxWidth,
+        maxWidth: maxWidth - 2 * pad.x,
       });
+      if (chip) {
+        this.addBackground({
+          pageIndex: result.pageIndex,
+          x: atX,
+          y: result.nextY - pad.y - descents[i],
+          width: Math.min(widthOf(i, startsLine), maxWidth),
+          height: result.height + 2 * pad.y + descents[i],
+          background: chip.background,
+        });
+      }
+      const resultBottom = result.nextY - pad.y - descents[i];
       if (result.pageIndex !== currentPageIndex) {
         currentPageIndex = result.pageIndex;
-        bottom = result.nextY;
+        bottom = resultBottom;
       } else {
-        bottom = Math.min(bottom, result.nextY);
+        bottom = Math.min(bottom, resultBottom);
       }
     };
 
     /**
-     * Writes values between `left` and `left + width`, as many per line as fit. Lines are centered
-     * when `center` is set. A value wider than the whole width gets a line of its own and wraps.
+     * Writes values between `left` and `left + width`, as many per line as fit, with each line
+     * aligned by `align`. A value wider than the whole width gets a line of its own and wraps.
      */
-    const flow = async (indices: number[], left: number, width: number, center: boolean) => {
+    const flow = async (indices: number[], left: number, width: number, align: Justify) => {
       const lines: number[][] = [];
       let used = 0;
       for (const i of indices) {
@@ -850,16 +1039,24 @@ export class BasePDFService {
       }
 
       let lineTop = top;
-      for (const line of lines) {
+      for (const [lineIndex, line] of lines.entries()) {
+        if (lineIndex > 0) lineTop -= lineGap;
+        // A line of chips moves to the next page as a whole, so its chips stay level.
+        if (chip && lineIndex > 0 && this.isOverflowing(lineTop - rowLineHeight)) {
+          currentPageIndex = await this.nextPage(currentPageIndex);
+          lineTop = this.pageTop;
+          bottom = lineTop;
+        }
         const lineWidth = line.reduce(
           (sum, i, index) => sum + widthOf(i, index === 0) + (index ? space : 0),
           0,
         );
         if (lineWidth > width) {
           // A single value too wide for the line: wrap it across the full width.
-          await write(line[0], true, left, lineTop, width, center ? 'center' : 'left');
+          await write(line[0], true, left, lineTop, width, align);
         } else {
-          let cursor = center ? left + (width - lineWidth) / 2 : left;
+          let cursor =
+            left + justifyLine({ justify: align, textWidth: lineWidth, containerWidth: width });
           for (const [index, i] of line.entries()) {
             await write(i, index === 0, cursor, lineTop, left + width - cursor);
             cursor += widthOf(i, index === 0) + space;
@@ -883,14 +1080,20 @@ export class BasePDFService {
         await write(i, i === 0, atX, top, right - atX);
         cursor += width + between;
       }
-    } else if (justify === 'between' && last > 0 && widthOf(last, false) <= containerWidth / 2) {
+    } else if (
+      (justify === 'between' || justify === 'split') &&
+      last > 0 &&
+      widthOf(last, justify === 'split') <= containerWidth / 2
+    ) {
       // Keep the last value (usually a date) on the right of the first line and wrap the rest in the
-      // space left.
-      const lastWidth = widthOf(last, false);
-      await write(last, false, right - lastWidth, top, lastWidth);
-      await flow(all.slice(0, last), x, containerWidth - lastWidth - space, false);
+      // space left. In a `split` row the last value stands apart, so it gets no separator.
+      const alone = justify === 'split';
+      const lastWidth = widthOf(last, alone);
+      await write(last, alone, right - lastWidth, top, lastWidth);
+      await flow(all.slice(0, last), x, containerWidth - lastWidth - space, 'left');
     } else {
-      await flow(all, x, containerWidth, justify === 'center');
+      const align = justify === 'center' ? 'center' : justify === 'end' ? 'right' : 'left';
+      await flow(all, x, containerWidth, align);
     }
 
     return {
@@ -952,8 +1155,189 @@ export class BasePDFService {
     return { width: iconScale * 10, height: iconScale * 10 };
   }
 
+  /**
+   * Records a box to draw behind the content of a page. Boxes are drawn in the order recorded; pass
+   * `at` (from `backgroundMark()`) to put a box before others, such as a group's box before the
+   * boxes of the chips inside it, which are recorded first because the group's size is known last.
+   */
+  addBackground(box: BackgroundBox, at?: number) {
+    if (box.width <= 0 || box.height <= 0) return;
+    if (at === undefined) this.$backgrounds.push(box);
+    else this.$backgrounds.splice(at, 0, box);
+  }
+
+  /** Where the next recorded box would go, to draw a container's box under what is inside it. */
+  backgroundMark() {
+    return this.$backgrounds.length;
+  }
+
+  /**
+   * Records a box behind content that runs from `top` (on page `from`) to `bottom` (on page `to`),
+   * one box per page. With `bleed`, each box reaches the page edges it touches the margins of.
+   */
+  addBackgroundSpan({
+    from,
+    to,
+    top,
+    bottom,
+    x,
+    width,
+    background,
+    at,
+  }: {
+    from: number;
+    to: number;
+    top: number;
+    bottom: number;
+    x: number;
+    width: number;
+    background: Background;
+    /** From `backgroundMark()`: draw these boxes under the ones recorded since. */
+    at?: number;
+  }) {
+    const [left, right] = this.bleedX(x, width, background.bleed);
+    for (let pageIndex = from; pageIndex <= to; pageIndex++) {
+      let boxTop = pageIndex === from ? top : this.pageTop;
+      let boxBottom = pageIndex === to ? bottom : this.$safeArea;
+      if (background.bleed && boxTop >= this.pageTop - 0.5) boxTop = this.$height;
+      if (background.fullHeight) {
+        boxTop = this.$height;
+        boxBottom = 0;
+      }
+      this.addBackground(
+        {
+          pageIndex,
+          x: left,
+          y: boxBottom,
+          width: right - left,
+          height: boxTop - boxBottom,
+          background,
+        },
+        at === undefined ? undefined : at + (pageIndex - from),
+      );
+    }
+    // A full-height column's colour continues on every later page, even where it has no content.
+    if (background.fullHeight)
+      this.$fullHeight.push({ from: to + 1, x: left, width: right - left, background });
+  }
+
+  /** Left and right edges of a box, moved out to the page edge where it touches the margin. */
+  protected bleedX(x: number, width: number, bleed?: boolean) {
+    let left = x;
+    let right = x + width;
+    if (bleed) {
+      if (left <= this.$paddingX + 0.5) left = 0;
+      if (right >= this.$width - this.$paddingX - 0.5) right = this.$width;
+    }
+    return [left, right];
+  }
+
+  /** Full-height backgrounds to repeat on pages added after their content ended. */
+  protected $fullHeight: Array<{
+    from: number;
+    x: number;
+    width: number;
+    background: Background;
+  }> = [];
+
+  /** Operators that draw a background box. */
+  protected backgroundOperators({ x, y, width, height, background }: BackgroundBox) {
+    const { color, border, radius = 0 } = background;
+    const ops: PDFOperator[] = [pushGraphicsState()];
+    const r = Math.min(radius, width / 2, height / 2);
+    const path = (inset: number) => {
+      const [l, b, w, h] = [x + inset, y + inset, width - 2 * inset, height - 2 * inset];
+      if (r <= 0) return [rectangle(l, b, w, h)];
+      // A rounded rectangle; k places the Bézier control points for a quarter circle.
+      const k = 0.5523 * r;
+      return [
+        moveTo(l + r, b),
+        lineTo(l + w - r, b),
+        appendBezierCurve(l + w - r + k, b, l + w, b + r - k, l + w, b + r),
+        lineTo(l + w, b + h - r),
+        appendBezierCurve(l + w, b + h - r + k, l + w - r + k, b + h, l + w - r, b + h),
+        lineTo(l + r, b + h),
+        appendBezierCurve(l + r - k, b + h, l, b + h - r + k, l, b + h - r),
+        lineTo(l, b + r),
+        appendBezierCurve(l, b + r - k, l + r - k, b, l + r, b),
+        closePath(),
+      ];
+    };
+
+    if (color) {
+      const { red, green, blue } = this.color(color);
+      ops.push(setFillingRgbColor(red, green, blue), ...path(0), fill());
+    }
+
+    if (border) {
+      const { red, green, blue } = this.color(border.color);
+      const lineWidth = border.width ?? 0.5;
+      // Lines sit inside the box, so a box's outline never pokes past its edges.
+      const inset = lineWidth / 2;
+      ops.push(setStrokingRgbColor(red, green, blue), setLineWidth(lineWidth));
+      const sides = border.sides ?? ['top', 'right', 'bottom', 'left'];
+      if (sides.length === 4) {
+        ops.push(...path(inset), stroke());
+      } else {
+        const [l, b, rt, t] = [x + inset, y + inset, x + width - inset, y + height - inset];
+        const lines = {
+          top: [x, t, x + width, t],
+          bottom: [x, b, x + width, b],
+          left: [l, y, l, y + height],
+          right: [rt, y, rt, y + height],
+        };
+        for (const side of sides) {
+          const [x1, y1, x2, y2] = lines[side];
+          ops.push(moveTo(x1, y1), lineTo(x2, y2), stroke());
+        }
+      }
+    }
+
+    ops.push(popGraphicsState());
+    return ops;
+  }
+
+  /**
+   * Draws the recorded backgrounds behind each page's content: in a content stream placed before
+   * the page's other streams, so text and lines drawn earlier stay on top.
+   */
+  protected drawBackgrounds() {
+    if (!this.$document) throw new Error('Initialise document first');
+    const doc = this.$document;
+
+    for (const { from, x, width, background } of this.$fullHeight) {
+      for (let pageIndex = from; pageIndex < this.$pages.length; pageIndex++) {
+        this.addBackground({ pageIndex, x, y: 0, width, height: this.$height, background });
+      }
+    }
+    this.$fullHeight = [];
+
+    const byPage = new Map<number, PDFOperator[]>();
+    // Page-height column fills go underneath every other box.
+    const boxes = [...this.$backgrounds].sort(
+      (a, b) => Number(Boolean(b.background.fullHeight)) - Number(Boolean(a.background.fullHeight)),
+    );
+    for (const box of boxes) {
+      const ops = byPage.get(box.pageIndex) ?? [];
+      ops.push(...this.backgroundOperators(box));
+      byPage.set(box.pageIndex, ops);
+    }
+    this.$backgrounds = [];
+
+    for (const [pageIndex, ops] of byPage) {
+      const page = this.$pages[pageIndex];
+      if (!page) continue;
+      const ref = doc.context.register(doc.context.contentStream(ops));
+      const contents = page.node.Contents();
+      if (contents instanceof PDFArray) contents.insert(0, ref);
+      else page.node.addContentStream(ref);
+    }
+  }
+
   save() {
     if (!this.$document) throw new Error('Initialise document first');
+
+    this.drawBackgrounds();
 
     return this.$document.save();
   }

@@ -6,15 +6,16 @@ For installation, usage and the template format, see the [package README](packag
 
 ## Repository layout
 
-| Path | Contents |
-| --- | --- |
-| `packages/resume/` | The published package. |
-| `packages/resume/templates/` | Built-in templates: `talvio`, `ember` and `mint`. |
-| `packages/resume/fixtures/` | Sample resumes for previews and tests, including edge cases. |
-| `packages/resume/types/` | Public types for resume data and templates. |
-| `debt.md` | Known technical debt and its workarounds. |
-| `playground/` | Live preview for building templates. Not published. |
-| `src/` | Re-exports the package for local use. |
+| Path                         | Contents                                                            |
+| ---------------------------- | ------------------------------------------------------------------- |
+| `packages/resume/`           | The published package.                                              |
+| `packages/resume/templates/` | Built-in templates: `talvio`, `ember` and `mint`.                   |
+| `packages/resume/fixtures/`  | Sample resumes for previews and tests, including edge cases.        |
+| `packages/resume/types/`     | Public types for resume data and templates.                         |
+| `debt.md`                    | Known technical debt and its workarounds.                           |
+| `playground/`                | Live preview for building templates. Not published.                 |
+| `playground/templates/`      | Templates built and checked here but not released with the package. |
+| `src/`                       | Re-exports the package for local use.                               |
 
 ## Development
 
@@ -40,24 +41,24 @@ The playground renders templates in the browser straight from the package source
 yarn playground
 ```
 
-This opens `http://localhost:5173`. Pick a template, a fixture, a font, an accent color and a type scale in the sidebar. Your choices are kept in the URL, so you can bookmark or share a view. There are three views:
+This opens `http://localhost:5173`. Pick a template, a fixture, fonts, an accent color and a type scale in the sidebar. The accent swatches are the colors offered in the Talvio web app. The fonts are either the built-in Helvetica, Times and Courier, Inter, or Inter with Source Serif 4 and IBM Plex Mono, downloaded from their publishers' releases. Your choices are kept in the URL, so you can bookmark or share a view. There are three views:
 
-| View | Shows |
-| --- | --- |
-| One resume | One template with one fixture, every page, at full size. |
+| View                     | Shows                                                                            |
+| ------------------------ | -------------------------------------------------------------------------------- |
+| One resume               | One template with one fixture, every page, at full size.                         |
 | Template × every fixture | One template rendered with every fixture. Use it to catch overflow and clipping. |
-| Fixture × every template | One fixture rendered with every template. Use it to compare templates. |
+| Fixture × every template | One fixture rendered with every template. Use it to compare templates.           |
 
-To add a template, create it in `packages/resume/templates/` and export it from `templates/index.ts`. To add a fixture, create it in `packages/resume/fixtures/` and add it to the `fixtures` object in `fixtures/index.ts`. Both show up in the sidebar on save.
+To add a template to the package, create it in `packages/resume/templates/` and export it from `templates/index.ts`. To build one that is not released with the package, create it in `playground/templates/` and export it from `playground/templates/index.ts`. It shows up in the sidebar the same way, and the layout tests (`packages/resume/layout.spec.ts`) check it with every fixture. Import types from `../../packages/resume/types` there, so the tests can load it. The folder holds the new templates (`classic`, `compact`, `minimal`, `skillsFirst`, `graduate`), with building blocks in `shared.ts`, and `engineDemo`, which uses every engine option; check it after changing the engine. To add a fixture, create it in `packages/resume/fixtures/` and add it to the `fixtures` object in `fixtures/index.ts`. Both show up in the sidebar on save.
 
-| Fixture | Checks |
-| --- | --- |
-| `entry`, `mid`, `senior` | The sample resumes used for the template picker in the Talvio web app. |
-| `minimal` | Only `name` and `role`, so every optional section is empty. |
-| `longText` | Long names, titles, URLs and an unbroken word, to catch text that runs past its column. |
-| `multiPage` | Enough experience to break across pages. |
-| `richText` | Bold and italic runs, empty paragraphs and lists in rich-text descriptions. |
-| `international` | Accented Latin, Greek and Cyrillic, plus Georgian, which the default font does not cover. |
+| Fixture                  | Checks                                                                                                                                                                                                                  |
+| ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `entry`, `mid`, `senior` | The sample resumes used for the template picker in the Talvio web app. `mid` and `senior` also have skill groups and a stack per role, and `senior` has headline achievements; `entry` has none, to show the fallbacks. |
+| `minimal`                | Only `name` and `role`, so every optional section is empty.                                                                                                                                                             |
+| `longText`               | Long names, titles, URLs and an unbroken word, to catch text that runs past its column.                                                                                                                                 |
+| `multiPage`              | Enough experience to break across pages.                                                                                                                                                                                |
+| `richText`               | Bold and italic runs, empty paragraphs and lists in rich-text descriptions.                                                                                                                                             |
+| `international`          | Accented Latin, Greek and Cyrillic, plus Georgian, which the default font does not cover.                                                                                                                               |
 
 ## Releasing
 
@@ -74,12 +75,12 @@ If the version in `package.json` is already on npm, the workflow builds and test
 
 The workflow uses npm trusted publishing, so no npm token is stored in GitHub. On npmjs.com, open the `@pdf-tlv/resume` package settings and add a trusted publisher:
 
-| Field | Value |
-| --- | --- |
-| Publisher | GitHub Actions |
-| Organization or user | `mdivani` |
-| Repository | `talv-pdf` |
-| Workflow filename | `publish.yml` |
+| Field                | Value          |
+| -------------------- | -------------- |
+| Publisher            | GitHub Actions |
+| Organization or user | `mdivani`      |
+| Repository           | `talv-pdf`     |
+| Workflow filename    | `publish.yml`  |
 
 ## License
 

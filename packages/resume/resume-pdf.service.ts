@@ -1,8 +1,20 @@
 import { ResumeData } from './types';
-import { Template, Group, Item, Field, Coords, Size, LabelItem, SeparatorVariant } from './types';
+import {
+  Template,
+  Group,
+  Item,
+  Field,
+  Coords,
+  Size,
+  LabelItem,
+  SeparatorVariant,
+  Color,
+  TextItem,
+  LineParams,
+} from './types';
 import { ContentToPdfService } from './content-to-pdf.service';
 import { Config, DEFAULT_CONFIG, RenderOptions } from './pdf.service';
-import { getWidth, mapDataToTemplate, hasContent, hasText } from './utils';
+import { getWidth, mapDataToTemplate, hasContent, hasText, templateFamilies } from './utils';
 export { formatTextWithAffixes, getWidth, mapDataToTemplate } from './utils';
 
 type CreateParams = Partial<Config>;
@@ -21,6 +33,32 @@ function mapStrings<T>(value: T, fn: (text: string) => string): T {
 
 type Position = { y: number; pageIndex: number };
 
+/** Where a timeline marker goes: on the rule, level with the middle of the entry's first line. */
+type Marker = Position & { x: number };
+
+type FieldResult = { currentY: number; currentX: number; pageIndex: number; marker?: Marker };
+
+type EntriesPosition = Coords & { pageIndex: number; maxWidth: number; space: number };
+
+/**
+ * The entries of one list that start at `index`: a list field becomes one field per entry, all
+ * sharing the template field's options.
+ */
+function entriesOf(fields: Field<Item>[], index: number) {
+  const first = fields[index];
+  let end = index + 1;
+  while (
+    end < fields.length &&
+    fields[end].name === first.name &&
+    fields[end].source === first.source &&
+    fields[end].aside === first.aside &&
+    fields[end].columns === first.columns
+  ) {
+    end++;
+  }
+  return fields.slice(index, end);
+}
+
 /** True when `a` is further down the document than `b`: on a later page, or lower on the same page. */
 const isFurther = (a: Position, b: Position) =>
   a.pageIndex > b.pageIndex || (a.pageIndex === b.pageIndex && a.y < b.y);
@@ -29,6 +67,11 @@ type GenerateParams = {
   data: ResumeData;
   template: Template;
   options?: RenderOptions;
+  /**
+   * Order of the template's sections, by `section` name, such as `['education', 'experience']`.
+   * Unknown names are ignored; sections left out follow in the template's default order.
+   */
+  sectionOrder?: string[];
 };
 
 export class ResumePDFService extends ContentToPdfService {
@@ -49,6 +92,7 @@ export class ResumePDFService extends ContentToPdfService {
     isPreview = DEFAULT_CONFIG.isPreview,
     watermark,
     customFont,
+    fonts,
   }: CreateParams = DEFAULT_CONFIG) {
     await super.init({
       screen,
@@ -59,11 +103,12 @@ export class ResumePDFService extends ContentToPdfService {
       isPreview,
       watermark,
       customFont,
+      fonts,
     });
 
-    // Download a custom font now so the first render doesn't wait for it. Only the bytes are cached:
-    // each render embeds them into its own document. Without a custom font, nothing is fetched.
-    if (customFont) await this.loadFonts(customFont);
+    // Download custom fonts now so the first render doesn't wait for them. Only the bytes are
+    // cached: each render embeds them into its own document. Without custom fonts, nothing is fetched.
+    await Promise.all(Object.values(this.$baseFonts).map((font) => this.loadFonts(font)));
 
     this.$ready = true;
   }
@@ -76,9 +121,10 @@ export class ResumePDFService extends ContentToPdfService {
    * Renders one resume into a brand-new document and returns its bytes. Calls on the same
    * instance run one at a time, so a render never sees another render's pages or settings.
    */
-  generate({ data, template, options = {} }: GenerateParams): Promise<Uint8Array> {
+  generate({ data, template, options = {}, sectionOrder }: GenerateParams): Promise<Uint8Array> {
     const render = this.$queue.then(async () => {
-      await this.update(options);
+      await this.update(options, templateFamilies(template));
+      this.$family = template.family ?? 'body';
 
       // With the standard fonts, characters they can't encode are replaced before layout, so text is
       // measured and drawn the same way. Template strings (labels, separators) go through it too.
@@ -86,6 +132,7 @@ export class ResumePDFService extends ContentToPdfService {
       const fields = mapDataToTemplate(
         mapStrings(data, encodable),
         mapStrings(template, encodable),
+        sectionOrder,
       );
 
       await this.writeToPDF(fields.groups);
@@ -115,6 +162,57 @@ export class ResumePDFService extends ContentToPdfService {
     }
   }
 
+  /** Room a box needs at its top to start on this page: its padding and two lines of text. */
+  protected boxStartHeight(paddingY: number) {
+    return 2 * paddingY + 2 * this.lineHeight(this.fontSize('md'));
+  }
+
+  /**
+   * Height of one entry of a list drawn at `width`, padding included. Text items are measured; rich
+   * text counts as two lines. Used to keep small boxes (a row of achievements, a skill group) whole.
+   */
+  protected entryHeight(field: Field<Item>, width: number) {
+    const pad = this.padding(field.padding);
+    const space = this.spacing(field.gap);
+    const inner = width - 2 * pad.x;
+    let height = 2 * pad.y;
+    let count = 0;
+
+    for (const item of field.items ?? []) {
+      if (!hasText(item)) continue;
+      height += this.itemHeight(item, inner);
+      count++;
+    }
+
+    return height + Math.max(count - 1, 0) * space;
+  }
+
+  /**
+   * Height of one item drawn at `width`, margins included. Text is measured; a row counts as one
+   * line of its largest text, and rich text as two lines.
+   */
+  protected itemHeight(item: Item, width: number) {
+    let height = this.spacing(item.margins?.top) + this.spacing(item.margins?.bottom);
+    if (item.type === 'text') {
+      const { fontSize, leading } = item.item;
+      height += this.textLineCount(item, width) * this.lineHeight(this.fontSize(fontSize), leading);
+    } else if (item.type === 'row') {
+      height += Math.max(
+        ...item.item.texts.map((value) =>
+          this.lineHeight(this.fontSize(value.fontSize), value.leading),
+        ),
+      );
+    } else {
+      height += 2 * this.lineHeight(this.fontSize('md'));
+    }
+    return height;
+  }
+
+  /** True when a box this tall fits on a page but not in the room left below `y`. */
+  protected needsNewPage(y: number, height: number) {
+    return this.isOverflowing(y - height) && height <= this.pageTop - this.$safeArea;
+  }
+
   async writeGroup(
     group: Group<Item>,
     {
@@ -128,12 +226,39 @@ export class ResumePDFService extends ContentToPdfService {
     let currentX = x;
     let currentPageIndex = pageIndex;
 
-    const { gap, direction, label, width, fields, groups, separator } = group;
+    const { gap, direction, label, width, fields, groups, separator, background, padding } = group;
     const space = this.spacing(gap);
 
-    let maxWidth = getWidth(width, containerWidth);
+    const outerWidth = getWidth(width, containerWidth);
+    let maxWidth = outerWidth;
 
-    if (hasContent(group)) {
+    const filled = hasContent(group);
+    const pad = filled ? this.padding(padding) : { x: 0, y: 0 };
+
+    // A box starts with its content: without room for its first lines here, it starts on the next
+    // page instead of leaving an empty sliver behind.
+    if (
+      filled &&
+      background &&
+      !background.fullHeight &&
+      this.isOverflowing(currentY - this.boxStartHeight(pad.y))
+    ) {
+      currentPageIndex = await this.nextPage(currentPageIndex);
+      currentY = this.pageTop;
+    }
+
+    const top: Position = { y: currentY, pageIndex: currentPageIndex };
+    const mark = this.backgroundMark();
+    currentY -= pad.y;
+    currentX += pad.x;
+    maxWidth -= 2 * pad.x;
+
+    // Where a label in a column of its own ends, when it is longer than the content beside it.
+    let labelBottom: Position | undefined;
+    // The gap left below the last thing drawn, which a box's padding replaces.
+    let trailing = 0;
+
+    if (filled) {
       currentY = await this.drawSeparator({
         x: currentX,
         y: currentY,
@@ -156,6 +281,7 @@ export class ResumePDFService extends ContentToPdfService {
       currentX = labelResult.currentX;
       currentPageIndex = labelResult.pageIndex;
       maxWidth = labelResult.width;
+      labelBottom = labelResult.bottom;
     }
 
     if (groups) {
@@ -183,34 +309,230 @@ export class ResumePDFService extends ContentToPdfService {
           currentY = end.y;
           currentPageIndex = end.pageIndex;
         }
-        currentX = horizontal ? result.width + space : result.currentX;
+        // Side by side, the next column starts after this one. Stacked, every sub-group starts at
+        // the same x, whatever a label column did inside the one before.
+        if (horizontal) currentX = result.width + space;
       }
 
+      if (end.y !== start.y || end.pageIndex !== start.pageIndex) trailing = space;
       currentY = end.y;
       currentPageIndex = end.pageIndex;
     }
 
     if (fields) {
-      for (const field of fields) {
-        const result = await this.writeField(
-          { ...field, maxWidth },
-          { y: currentY, x: currentX, pageIndex: currentPageIndex },
-        );
+      for (let index = 0; index < fields.length; ) {
+        const field = fields[index];
+        const run = entriesOf(fields, index);
+        const at = { x: currentX, y: currentY, pageIndex: currentPageIndex, maxWidth, space };
 
-        currentY = result.currentY - space;
-        currentX = result.currentX;
+        const result =
+          field.columns && field.columns > 1
+            ? await this.writeColumns(run, at)
+            : field.aside?.rule
+              ? await this.writeTimeline(run, at)
+              : await this.writeEntries([field], at);
+
+        currentY = result.currentY;
         currentPageIndex = result.pageIndex;
+        index += (field.columns ?? 1) > 1 || field.aside?.rule ? run.length : 1;
+        trailing = space;
       }
     }
 
-    return { currentY, currentX, width: maxWidth + this.$paddingX, pageIndex: currentPageIndex };
+    if (
+      labelBottom &&
+      isFurther(
+        { ...labelBottom, y: labelBottom.y - space },
+        { y: currentY, pageIndex: currentPageIndex },
+      )
+    ) {
+      currentY = labelBottom.y - space;
+      currentPageIndex = labelBottom.pageIndex;
+      trailing = space;
+    }
+
+    if (pad.x || pad.y || (filled && background)) {
+      // The box ends its padding below the content, and the group's gap follows the box.
+      const bottom = currentY + trailing - pad.y - this.descent('md');
+      if (filled && background) {
+        this.addBackgroundSpan({
+          from: top.pageIndex,
+          to: currentPageIndex,
+          top: top.y,
+          bottom,
+          x,
+          width: outerWidth,
+          background,
+          at: mark,
+        });
+      }
+      currentY = bottom - trailing;
+    }
+
+    return {
+      currentY,
+      currentX: currentX - pad.x,
+      // The group's right edge, wherever a label column moved its content.
+      width: x + outerWidth,
+      pageIndex: currentPageIndex,
+    };
+  }
+
+  /** Writes entries one below the other. Returns the position after the last one and its gap. */
+  protected async writeEntries(
+    entries: Field<Item>[],
+    { x, y, pageIndex, maxWidth, space }: EntriesPosition,
+  ) {
+    let currentY = y;
+    let currentPageIndex = pageIndex;
+    const tops: Array<FieldResult> = [];
+
+    for (const entry of entries) {
+      const result = await this.writeField(
+        { ...entry, maxWidth },
+        { y: currentY, x, pageIndex: currentPageIndex },
+      );
+      tops.push(result);
+
+      currentY = result.currentY - space;
+      currentPageIndex = result.pageIndex;
+    }
+
+    return { currentY, pageIndex: currentPageIndex, results: tops };
+  }
+
+  /**
+   * Writes the entries of a list side by side, `columns` to a row. The boxes in a row are all as
+   * tall as the tallest.
+   */
+  protected async writeColumns(entries: Field<Item>[], at: EntriesPosition) {
+    const { x, maxWidth, space } = at;
+    const columns = entries[0].columns ?? 1;
+    const filled = entries.filter((entry) => hasContent({ fields: [entry] }));
+    const columnWidth = (maxWidth - (columns - 1) * space) / columns;
+
+    let currentY = at.y;
+    let currentPageIndex = at.pageIndex;
+
+    for (let first = 0; first < filled.length; first += columns) {
+      const row = filled.slice(first, first + columns);
+      const rowHeight = Math.max(...row.map((entry) => this.entryHeight(entry, columnWidth)));
+
+      if (this.needsNewPage(currentY, rowHeight)) {
+        currentPageIndex = await this.nextPage(currentPageIndex);
+        currentY = this.pageTop;
+      }
+
+      const top = { y: currentY, pageIndex: currentPageIndex };
+      const mark = this.backgroundMark();
+      let end = { ...top };
+      for (const [column, entry] of row.entries()) {
+        const result = await this.writeField(
+          { ...entry, maxWidth: columnWidth },
+          { x: x + column * (columnWidth + space), ...top },
+          { drawBackground: false },
+        );
+        const reached = { y: result.currentY, pageIndex: result.pageIndex };
+        if (isFurther(reached, end)) end = reached;
+      }
+
+      for (const [column, entry] of row.entries()) {
+        if (!entry.background) continue;
+        this.addBackgroundSpan({
+          from: top.pageIndex,
+          to: end.pageIndex,
+          top: top.y,
+          bottom: end.y,
+          x: x + column * (columnWidth + space),
+          width: columnWidth,
+          background: entry.background,
+          at: mark,
+        });
+      }
+
+      currentY = end.y - space;
+      currentPageIndex = end.pageIndex;
+    }
+
+    return { currentY, pageIndex: currentPageIndex };
+  }
+
+  /**
+   * Writes entries with a vertical rule between their left column and their content, and a marker
+   * where each entry starts. The rule runs from the first marker to the end of the last entry.
+   */
+  protected async writeTimeline(entries: Field<Item>[], at: EntriesPosition) {
+    const result = await this.writeEntries(entries, at);
+    const drawn = result.results.filter((entry) => entry.marker);
+    const rule = entries[0].aside?.rule ?? {};
+
+    for (const [index, entry] of drawn.entries()) {
+      const marker = entry.marker as Marker;
+      const next = drawn[index + 1]?.marker;
+      this.drawVerticalRule({
+        x: marker.x,
+        from: { y: marker.y, pageIndex: marker.pageIndex },
+        to: next
+          ? { y: next.y, pageIndex: next.pageIndex }
+          : { y: entry.currentY, pageIndex: entry.pageIndex },
+        color: rule.color ?? 'neutral',
+      });
+    }
+
+    // Markers go on top of the rule.
+    for (const entry of drawn) {
+      const marker = entry.marker as Marker;
+      this.$pages[marker.pageIndex].drawCircle({
+        x: marker.x,
+        y: marker.y,
+        size: 3,
+        color: this.color(rule.marker ?? 'secondary'),
+      });
+    }
+
+    return result;
+  }
+
+  /** A vertical line at `x` from one point down to another, across pages. */
+  protected drawVerticalRule({
+    x,
+    from,
+    to,
+    color,
+  }: {
+    x: number;
+    from: Position;
+    to: Position;
+    color: Color;
+  }) {
+    for (let pageIndex = from.pageIndex; pageIndex <= to.pageIndex; pageIndex++) {
+      const top = pageIndex === from.pageIndex ? from.y : this.pageTop;
+      const bottom = pageIndex === to.pageIndex ? to.y : this.$safeArea;
+      if (top <= bottom) continue;
+      this.$pages[pageIndex].drawLine({
+        start: { x, y: top },
+        end: { x, y: bottom },
+        thickness: 1,
+        color: this.color(color),
+      });
+    }
   }
 
   async writeField(
     field: Field<Item>,
     { y, x, pageIndex }: { y: number; x: number; pageIndex: number },
-  ) {
-    const { items, gap, maxWidth = this.$maxWidth, label, separator } = field;
+    { drawBackground = true }: { drawBackground?: boolean } = {},
+  ): Promise<FieldResult> {
+    const {
+      items,
+      gap,
+      maxWidth = this.$maxWidth,
+      label,
+      separator,
+      aside,
+      background,
+      padding,
+    } = field;
 
     let currentY = y;
     let currentX = x;
@@ -218,8 +540,30 @@ export class ResumePDFService extends ContentToPdfService {
     let currentPageIndex = pageIndex;
 
     const space = this.spacing(gap);
+    const filled = hasContent({ fields: [field] });
+    const boxed = filled && Boolean(background || padding);
+    const pad = boxed ? this.padding(padding) : { x: 0, y: 0 };
 
-    if (hasContent({ fields: [field] })) {
+    if (
+      boxed &&
+      drawBackground &&
+      background &&
+      (this.needsNewPage(currentY, this.entryHeight(field, maxWidth)) ||
+        this.isOverflowing(currentY - this.boxStartHeight(pad.y)))
+    ) {
+      currentPageIndex = await this.nextPage(currentPageIndex);
+      currentY = this.pageTop;
+    }
+
+    const top: Position = { y: currentY, pageIndex: currentPageIndex };
+    const mark = this.backgroundMark();
+    currentY -= pad.y;
+    currentX += pad.x;
+    currentMaxWidth -= 2 * pad.x;
+    // Where a label in a column of its own ends, when it is longer than the content beside it.
+    let labelBottom: Position | undefined;
+
+    if (filled) {
       currentY = this.drawSeparator({
         x: currentX,
         y: currentY,
@@ -242,39 +586,135 @@ export class ResumePDFService extends ContentToPdfService {
       currentX = labelResult.currentX;
       currentPageIndex = labelResult.pageIndex;
       currentMaxWidth = labelResult.width;
+      labelBottom = labelResult.bottom;
     }
 
+    let marker: Marker | undefined;
+    let wroteItems = false;
+
     if (items?.length) {
+      // With an aside, one item goes in a column on the left and the rest beside it.
+      const asideItem =
+        aside && filled
+          ? items.find((item) => item.type === 'text' && item.name === aside.name && hasText(item))
+          : undefined;
+      let itemX = currentX;
+      let itemWidth = currentMaxWidth;
+      let asideEnd: Position | undefined;
+
+      const columnGap = this.spacing(aside?.gap ?? 'md');
+      if (aside && filled) {
+        const gutter = aside.rule ? 2 * columnGap : columnGap;
+        itemX = currentX + aside.width + gutter;
+        itemWidth = currentMaxWidth - aside.width - gutter;
+      }
+
       // An entry (one object of a list, such as a job) keeps its heading with the start of its
       // content: its first line only goes on this page if the rest of it and a little of what
       // follows fit too.
-      const head = field.source === 'objects' && items.length > 1 ? items.findIndex(hasText) : -1;
+      const rest = asideItem ? items.filter((item) => item !== asideItem) : items;
+      const head = field.source === 'objects' && rest.length > 1 ? rest.findIndex(hasText) : -1;
+      // With `headingItems`, the items after the first that belong to the heading come along too.
+      const headingRest =
+        head < 0
+          ? 0
+          : rest
+              .slice(head + 1)
+              .filter(hasText)
+              .slice(0, Math.max((field.headingItems ?? 1) - 1, 0))
+              .reduce((sum, item) => sum + space + this.itemHeight(item, itemWidth), 0);
 
-      for (const [index, item] of items.entries()) {
+      if (aside && filled) {
+        // Both columns start together, so the entry moves to the next page as a whole when its
+        // heading and first lines don't fit here.
+        const first = items.find((item) => item !== asideItem && hasText(item));
+        const firstLine = this.lineHeight(
+          this.fontSize(first?.type === 'text' ? first.item.fontSize : 'md'),
+        );
+        const need = first
+          ? firstLine + this.entryHeadHeight(first, itemWidth) + headingRest
+          : firstLine;
+        if (this.isOverflowing(currentY - need)) {
+          currentPageIndex = await this.nextPage(currentPageIndex);
+          currentY = this.pageTop;
+        }
+
+        if (aside.rule) {
+          marker = {
+            x: currentX + aside.width + columnGap,
+            y: currentY - firstLine / 2,
+            pageIndex: currentPageIndex,
+          };
+        }
+
+        if (asideItem) {
+          const result = await this.writeItem(asideItem, {
+            y: currentY,
+            x: currentX,
+            pageIndex: currentPageIndex,
+            maxWidth: aside.width,
+          });
+          asideEnd = { y: result.currentY - space, pageIndex: result.pageIndex };
+        }
+      }
+
+      for (const [index, item] of rest.entries()) {
         // A missing optional value (no description, say) takes no space: no margins, no gap.
         if (!hasText(item)) continue;
 
-        const { top, bottom } = item.margins || {};
+        const { top: marginTop, bottom } = item.margins || {};
 
-        if (top) {
-          currentY -= this.spacing(top);
+        if (marginTop) {
+          currentY -= this.spacing(marginTop);
         }
 
         const result = await this.writeItem(item, {
           y: currentY,
-          x: currentX,
+          x: itemX,
           pageIndex: currentPageIndex,
-          maxWidth: currentMaxWidth,
-          keepWithNext: index === head ? this.entryHeadHeight(item, currentMaxWidth) : 0,
+          maxWidth: itemWidth,
+          keepWithNext: index === head ? this.entryHeadHeight(item, itemWidth) + headingRest : 0,
         });
 
         currentY = result.currentY - this.spacing(bottom) - space;
-        currentX = result.currentX;
+        itemX = result.currentX;
         currentPageIndex = result.pageIndex;
+        wroteItems = true;
+      }
+
+      if (asideEnd && isFurther(asideEnd, { y: currentY, pageIndex: currentPageIndex })) {
+        currentY = asideEnd.y;
+        currentPageIndex = asideEnd.pageIndex;
+        wroteItems = true;
       }
     }
 
-    return { currentY, currentX: x, pageIndex: currentPageIndex };
+    const afterLabel = labelBottom && { ...labelBottom, y: labelBottom.y - space };
+    if (afterLabel && isFurther(afterLabel, { y: currentY, pageIndex: currentPageIndex })) {
+      currentY = afterLabel.y;
+      currentPageIndex = afterLabel.pageIndex;
+      wroteItems = true;
+    }
+
+    if (boxed) {
+      // The box's padding takes the place of the gap after the last item.
+      const bottom = currentY + (wroteItems ? space : 0) - pad.y - this.descent('md');
+      if (background && drawBackground) {
+        this.addBackgroundSpan({
+          from: top.pageIndex,
+          to: currentPageIndex,
+          top: top.y,
+          bottom,
+          x,
+          width: maxWidth,
+          background,
+          at: mark,
+        });
+      }
+      currentY = bottom;
+    }
+
+    return { currentY, currentX: x, pageIndex: currentPageIndex, marker };
   }
 
   /**
@@ -285,17 +725,25 @@ export class ResumePDFService extends ContentToPdfService {
     const content = 2 * this.lineHeight(this.fontSize('md'));
     if (item.type !== 'text') return content;
 
-    const { text, fontSize, font = 'regular', leading, icon } = item.item;
-    const lines = this.getTextLines({
+    const { fontSize, leading } = item.item;
+    return (
+      (this.textLineCount(item, maxWidth) - 1) * this.lineHeight(this.fontSize(fontSize), leading) +
+      content
+    );
+  }
+
+  /** How many lines a text item wraps to in `width`, as `writeMultiLine` wraps it. */
+  protected textLineCount(item: TextItem<LineParams>, width: number) {
+    const { text, fontSize, font = 'regular', family, leading, icon, bullet } = item.item;
+    return this.getTextLines({
       text,
       size: fontSize,
-      font: this.getFont(font),
+      font: this.getFont(font, family),
       leading: leading || this.$leading,
       maxWidth:
-        Math.min(item.item.maxWidth || maxWidth, maxWidth) -
-        this.prefixWidth({ text, icon, fontSize }),
-    });
-    return (lines.length - 1) * this.lineHeight(this.fontSize(fontSize), leading) + content;
+        Math.min(item.item.maxWidth || width, width) -
+        this.prefixWidth({ text, icon, bullet, fontSize }),
+    }).length;
   }
 
   async writeItem(
@@ -349,8 +797,10 @@ export class ResumePDFService extends ContentToPdfService {
         x: currentX,
         maxWidth,
         pageIndex: currentPageIndex,
-        color: 'primary',
-        fontSize: 'md',
+        color: item.item?.color ?? 'primary',
+        fontSize: item.item?.fontSize ?? 'md',
+        ...(item.item?.family ? { family: item.item.family } : {}),
+        ...(item.item?.leading ? { leading: item.item.leading } : {}),
         font: 'regular',
       });
 
@@ -396,8 +846,18 @@ export class ResumePDFService extends ContentToPdfService {
     currentPageIndex: number;
     maxWidth: number;
     label?: LabelItem;
-  }) {
+  }): Promise<{
+    currentY: number;
+    currentX: number;
+    pageIndex: number;
+    width: number;
+    bottom?: Position;
+  }> {
     let currentMaxWidth = maxWidth;
+
+    if (label && (label.column || label.background || label.padding)) {
+      return this.writeLabelBlock({ currentY, currentX, currentPageIndex, maxWidth, label });
+    }
 
     if (label) {
       const { top, bottom } = label.margins || {};
@@ -429,6 +889,69 @@ export class ResumePDFService extends ContentToPdfService {
     }
 
     return { currentY, currentX, pageIndex: currentPageIndex, width: currentMaxWidth };
+  }
+
+  /**
+   * A label with a background bar, padding, or a column of its own. In a column, the content starts
+   * level with the label's top, beside it, and `bottom` says where the label ends.
+   */
+  protected async writeLabelBlock({
+    currentY,
+    currentX,
+    currentPageIndex,
+    maxWidth,
+    label,
+  }: {
+    currentY: number;
+    currentX: number;
+    currentPageIndex: number;
+    maxWidth: number;
+    label: LabelItem;
+  }) {
+    const { top, bottom } = label.margins || {};
+    const pad = this.padding(label.padding);
+    const columnGap = label.column ? this.spacing('md') : 0;
+    const width = label.column ? Math.min(label.column, maxWidth) : maxWidth;
+
+    const result = await this.writeMultiLine({
+      ...label,
+      maxWidth: Math.max(width - columnGap - 2 * pad.x, 1),
+      y: currentY - this.spacing(top) - pad.y,
+      x: currentX + pad.x,
+      font: label.font || 'semibold',
+      pageIndex: currentPageIndex,
+      offset: 70,
+    });
+
+    // Measured on the page the label ended up on.
+    const boxTop = result.nextY + result.height + pad.y;
+    const boxBottom = result.nextY - pad.y - this.descent(label.fontSize);
+
+    if (label.background) {
+      this.addBackgroundSpan({
+        from: result.pageIndex,
+        to: result.pageIndex,
+        top: boxTop,
+        bottom: boxBottom,
+        x: currentX,
+        width: width - columnGap,
+        background: label.background,
+      });
+    }
+
+    const after = boxBottom - this.spacing(bottom);
+
+    if (label.column) {
+      return {
+        currentY: boxTop,
+        currentX: currentX + width,
+        pageIndex: result.pageIndex,
+        width: maxWidth - width,
+        bottom: { y: after, pageIndex: result.pageIndex },
+      };
+    }
+
+    return { currentY: after, currentX, pageIndex: result.pageIndex, width: maxWidth };
   }
 
   drawSeparator({
