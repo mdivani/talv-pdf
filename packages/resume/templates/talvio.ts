@@ -228,6 +228,7 @@ const projectsFields: Field<ItemStyle>[] = [
 ];
 
 export const talvio: Template = {
+  defaultSectionOrder: ['experience', 'projects', 'recommendations', 'skills', 'education'],
   groups: [
     {
       width: 'full',
@@ -245,6 +246,7 @@ export const talvio: Template = {
           groups: [
             {
               width: 'full',
+              section: 'experience',
               label: {
                 fontSize: 'lg',
                 color: 'secondary',
@@ -258,6 +260,7 @@ export const talvio: Template = {
             },
             {
               width: 'full',
+              section: 'projects',
               label: {
                 fontSize: 'lg',
                 color: 'secondary',
@@ -271,6 +274,7 @@ export const talvio: Template = {
             },
             {
               width: 'full',
+              section: 'recommendations',
               label: {
                 fontSize: 'lg',
                 color: 'secondary',
@@ -374,6 +378,7 @@ export const talvio: Template = {
             },
             {
               width: 'full',
+              section: 'skills',
               fields: [
                 {
                   name: 'skills',
@@ -405,6 +410,7 @@ export const talvio: Template = {
             },
             {
               width: 'full',
+              section: 'skills',
               fields: [
                 {
                   name: 'languages',
@@ -436,6 +442,7 @@ export const talvio: Template = {
             },
             {
               width: 'full',
+              section: 'education',
               label: {
                 fontSize: 'lg',
                 color: 'secondary',

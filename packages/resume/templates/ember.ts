@@ -304,6 +304,14 @@ const projectsFields: Field<ItemStyle>[] = [
 ];
 
 export const ember: Template = {
+  defaultSectionOrder: [
+    'summary',
+    'skills',
+    'experience',
+    'education',
+    'projects',
+    'recommendations',
+  ],
   groups: [
     {
       width: 'full',
@@ -322,10 +330,12 @@ export const ember: Template = {
     },
     {
       width: 'full',
+      section: 'summary',
       fields: summaryFields,
     },
     {
       width: 'full',
+      section: 'skills',
       separator: 'primary',
       gap: 'md',
       fields: [
@@ -408,6 +418,7 @@ export const ember: Template = {
     },
     {
       width: 'full',
+      section: 'experience',
       separator: 'primary',
       gap: 'md',
       label: {
@@ -422,6 +433,7 @@ export const ember: Template = {
     },
     {
       width: 'full',
+      section: 'education',
       separator: 'primary',
       label: {
         text: 'Education',
@@ -436,6 +448,7 @@ export const ember: Template = {
     },
     {
       width: 'full',
+      section: 'projects',
       separator: 'primary',
       label: {
         text: 'Projects',
@@ -449,6 +462,7 @@ export const ember: Template = {
     },
     {
       width: 'full',
+      section: 'recommendations',
       separator: 'primary',
       label: {
         text: 'References',

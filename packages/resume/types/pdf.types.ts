@@ -1,5 +1,5 @@
 import { PDFFont, PDFPage } from 'pdf-lib';
-import { Align, Justify, Size, Colors, IconTypes } from './config.types';
+import { Align, Justify, Size, Color, IconTypes } from './config.types';
 import { LineParamStyles, RowBaseParam } from './resume.types';
 
 // Params
@@ -38,7 +38,7 @@ export interface AlignLineParams {
 }
 
 export interface WriteTextParams extends TextLinesParams, Coords {
-  color: Colors;
+  color: Color;
   lineHeight: number;
   page: PDFPage;
 }
@@ -54,20 +54,20 @@ export interface WriteRowParams extends RowBaseParam, Coords {
 }
 
 export interface DrawCircleParams extends Coords {
-  color: Colors;
+  color: Color;
   page: PDFPage;
   size: Size;
 }
 
 export interface DrawIconParams extends Coords {
-  color: Colors;
+  color: Color;
   icon: IconTypes;
   page: PDFPage;
   size: Size;
 }
 
 export interface DrawLineParams extends Coords {
-  color: Colors;
+  color: Color;
   page: PDFPage;
   size: Size;
   width: number;
