@@ -1,6 +1,6 @@
 import type { ResumeData } from '../types';
 import { base } from './base';
-import { edu, exp, project, rec } from './helpers';
+import { edu, exp, withStack, project, rec } from './helpers';
 
 /** Five years in, three roles. Matches the web app's mid-level preview. */
 export const mid: ResumeData = {
@@ -20,20 +20,30 @@ export const mid: ResumeData = {
     'Mentoring',
   ],
   tools: ['Next.js', 'Terraform', 'Docker', 'Datadog', 'Playwright', 'Figma'],
+  skillGroups: [
+    { name: 'Frontend', skills: ['React', 'TypeScript', 'Accessibility'] },
+    { name: 'Backend', skills: ['Node.js', 'PostgreSQL', 'REST APIs'] },
+  ],
   experience: [
-    exp('Northwind Health', 'Full-time', 'Software Engineer', 'Mar 2023 - Present', [
-      'Lead developer on the appointment booking service handling 60,000 bookings a month across three clinics.',
-      'Cut p95 API latency from 1.4s to 380ms by adding read replicas and query-level caching.',
-      'Introduced contract tests between the web app and the scheduling API, removing a weekly class of release bugs.',
-      "Mentor two junior engineers and run the team's design review.",
-      'Ran the on-call rota and wrote the incident playbook that cut mean time to recovery by 40%.',
-    ]),
-    exp('Brightline Studio', 'Full-time', 'Frontend Developer', 'Jul 2021 - Feb 2023', [
-      'Shipped the self-serve billing flow that moved 70% of invoices off manual processing.',
-      'Built the shared component library used by four product teams.',
-      'Raised Lighthouse accessibility scores from 61 to 97 across the marketing site.',
-      'Paired with design on the component API; adopted by every product team within a quarter.',
-    ]),
+    withStack(
+      exp('Northwind Health', 'Full-time', 'Software Engineer', 'Mar 2023 - Present', [
+        'Lead developer on the appointment booking service handling 60,000 bookings a month across three clinics.',
+        'Cut p95 API latency from 1.4s to 380ms by adding read replicas and query-level caching.',
+        'Introduced contract tests between the web app and the scheduling API, removing a weekly class of release bugs.',
+        "Mentor two junior engineers and run the team's design review.",
+        'Ran the on-call rota and wrote the incident playbook that cut mean time to recovery by 40%.',
+      ]),
+      ['TypeScript', 'React', 'Next.js', 'PostgreSQL'],
+    ),
+    withStack(
+      exp('Brightline Studio', 'Full-time', 'Frontend Developer', 'Jul 2021 - Feb 2023', [
+        'Shipped the self-serve billing flow that moved 70% of invoices off manual processing.',
+        'Built the shared component library used by four product teams.',
+        'Raised Lighthouse accessibility scores from 61 to 97 across the marketing site.',
+        'Paired with design on the component API; adopted by every product team within a quarter.',
+      ]),
+      ['React', 'TypeScript', 'Playwright'],
+    ),
     exp('Brightline Studio', 'Internship', 'Frontend Developer Intern', 'Jan 2021 - Jun 2021', [
       'Built the onboarding checklist with keyboard navigation and screen-reader labels.',
       'Reduced bundle size by 18% by replacing a date library and lazy-loading the settings page.',

@@ -44,6 +44,12 @@ export const exp = (
   kind: 'experience',
 });
 
+/** An experience entry with the technologies used in the role. */
+export const withStack = (entry: FormattedExperience, stack: string[]): FormattedExperience => ({
+  ...entry,
+  stack,
+});
+
 export const edu = (
   school: string,
   degree: string,
