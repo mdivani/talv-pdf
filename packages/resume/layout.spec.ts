@@ -111,6 +111,37 @@ function offPageHorizontally(boxes: Box[]) {
     .map((b) => `page ${b.page + 1}: "${b.text}" from x=${b.x0.toFixed(0)} to ${b.x1.toFixed(0)}`);
 }
 
+/**
+ * Entry headings (job titles, project names, recommenders, degrees) left as the last line of their
+ * column on a page, with the rest of the entry on the next page.
+ */
+function orphanHeadings(boxes: Box[], fixture: string, pageCount: number) {
+  const data = fixtures[fixture];
+  // Only entries with something after the heading can be split from it.
+  const headings = [
+    ...(data.experience ?? []).map((entry) => entry.jobTitle),
+    ...(data.projects ?? []).map((entry) => entry.projectName),
+    ...(data.recommendations ?? []).map((entry) => entry.recommendeeName),
+    ...(data.education ?? []).filter((entry) => entry.description).map((entry) => entry.degree),
+  ];
+  const isHeading = (text: string) =>
+    text.length >= 3 &&
+    text !== data.name &&
+    text !== data.role &&
+    headings.some((heading) => heading.includes(text));
+  return boxes
+    .filter(
+      (box) =>
+        box.page < pageCount - 1 &&
+        isHeading(box.text.trim()) &&
+        !boxes.some(
+          (other) =>
+            other.page === box.page && other.y0 < box.y0 - 1 && Math.abs(other.x0 - box.x0) <= 15,
+        ),
+    )
+    .map((box) => `page ${box.page + 1} ends with "${box.text}"`);
+}
+
 /** An icon belongs to the text drawn just to its right on the same line. */
 function orphanIcons(icons: Icon[], boxes: Box[]) {
   return icons
@@ -172,6 +203,10 @@ describe.each([...cases, ...pageBreakCases])(
 
     it('keeps text on the page horizontally', () => {
       expect(offPageHorizontally(result.boxes)).toEqual([]);
+    });
+
+    it('keeps entry headings with their content', () => {
+      expect(orphanHeadings(result.boxes, fixture, result.pageCount)).toEqual([]);
     });
 
     it('draws every icon next to its text', () => {

@@ -109,12 +109,20 @@ export function splitLongLine(
     let end = 1;
     while (end < rest.length && widthOf(rest.slice(0, end + 1)) <= maxWidth) end++;
     if (end < rest.length) {
+      // Break after the last soft break character in the piece's second half, but not one that
+      // would leave only a character or two for the next line ("project-" + "2") when an earlier
+      // one exists.
+      let fallback = 0;
       for (let i = end - 1; i > end / 2; i--) {
-        if (SOFT_BREAKS.test(rest[i])) {
+        if (!SOFT_BREAKS.test(rest[i])) continue;
+        if (rest.length - (i + 1) >= 3) {
+          fallback = 0;
           end = i + 1;
           break;
         }
+        fallback ||= i + 1;
       }
+      if (fallback) end = fallback;
     }
     pieces.push(rest.slice(0, end));
     rest = rest.slice(end);
@@ -681,6 +689,8 @@ export class BasePDFService {
         y: nextY,
         pageIndex: currentPageIndex,
         leading,
+        // The look-ahead applies to the first line only: once it is placed, the rest follows it.
+        offset: index === 0 ? options.offset : 0,
         ...prefixes,
       });
 

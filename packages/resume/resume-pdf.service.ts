@@ -245,7 +245,12 @@ export class ResumePDFService extends ContentToPdfService {
     }
 
     if (items?.length) {
-      for (const item of items) {
+      // An entry (one object of a list, such as a job) keeps its heading with the start of its
+      // content: its first line only goes on this page if the rest of it and a little of what
+      // follows fit too.
+      const head = field.source === 'objects' && items.length > 1 ? items.findIndex(hasText) : -1;
+
+      for (const [index, item] of items.entries()) {
         const { top, bottom } = item.margins || {};
 
         if (top) {
@@ -257,6 +262,7 @@ export class ResumePDFService extends ContentToPdfService {
           x: currentX,
           pageIndex: currentPageIndex,
           maxWidth: currentMaxWidth,
+          keepWithNext: index === head ? this.entryHeadHeight(item, currentMaxWidth) : 0,
         });
 
         currentY = result.currentY - this.spacing(bottom) - space;
@@ -268,9 +274,36 @@ export class ResumePDFService extends ContentToPdfService {
     return { currentY, currentX: x, pageIndex: currentPageIndex };
   }
 
+  /**
+   * Room an entry's heading needs below its first line: the heading's remaining lines plus two lines
+   * of the entry's content.
+   */
+  entryHeadHeight(item: Item, maxWidth: number) {
+    const content = 2 * this.lineHeight(this.fontSize('md'));
+    if (item.type !== 'text') return content;
+
+    const { text, fontSize, font = 'regular', leading, icon } = item.item;
+    const lines = this.getTextLines({
+      text,
+      size: fontSize,
+      font: this.getFont(font),
+      leading: leading || this.$leading,
+      maxWidth:
+        Math.min(item.item.maxWidth || maxWidth, maxWidth) -
+        this.prefixWidth({ text, icon, fontSize }),
+    });
+    return (lines.length - 1) * this.lineHeight(this.fontSize(fontSize), leading) + content;
+  }
+
   async writeItem(
     item: Item,
-    { y, x, pageIndex, maxWidth }: Coords & { pageIndex: number; maxWidth: number },
+    {
+      y,
+      x,
+      pageIndex,
+      maxWidth,
+      keepWithNext = 0,
+    }: Coords & { pageIndex: number; maxWidth: number; keepWithNext?: number },
   ) {
     let currentY = y;
     let currentX = x;
@@ -295,6 +328,7 @@ export class ResumePDFService extends ContentToPdfService {
         // A template's maxWidth can narrow a text item, never widen it past its column.
         maxWidth: Math.min(item.item.maxWidth || maxWidth, maxWidth),
         font: item.item.font || 'regular',
+        offset: Math.max(item.item.offset ?? 0, keepWithNext),
         pageIndex: currentPageIndex,
         y: currentY,
         x: currentX,
@@ -329,8 +363,9 @@ export class ResumePDFService extends ContentToPdfService {
         containerWidth: maxWidth,
         y: currentY,
         x: currentX,
-        texts: item.item.texts.map((text) => ({
+        texts: item.item.texts.map((text, index) => ({
           ...text,
+          offset: index === 0 ? Math.max(text.offset ?? 0, keepWithNext) : text.offset,
           font: text.font || 'regular',
           pageIndex: currentPageIndex,
           y: currentY,
