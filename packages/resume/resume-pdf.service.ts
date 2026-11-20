@@ -251,6 +251,9 @@ export class ResumePDFService extends ContentToPdfService {
       const head = field.source === 'objects' && items.length > 1 ? items.findIndex(hasText) : -1;
 
       for (const [index, item] of items.entries()) {
+        // A missing optional value (no description, say) takes no space: no margins, no gap.
+        if (!hasText(item)) continue;
+
         const { top, bottom } = item.margins || {};
 
         if (top) {

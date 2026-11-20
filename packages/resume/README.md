@@ -195,7 +195,7 @@ await service.create({ colors: { primary: '#222222', secondary: '#660000', neutr
 
 Each entry in `experience`, `education`, `projects` and `recommendations` also needs a `kind` field that matches its section: `'experience'`, `'education'`, `'project'` or `'recommendation'`.
 
-The built-in templates show `locationType` on an experience entry, such as `'Remote'`, next to the company. They show `dateRangeShort` on an education entry, such as `'2017 - 2021'`, under or beside the degree. If `dateRangeShort` is missing, no date is shown for that entry.
+The built-in templates show `locationType` on an experience entry, such as `'Remote'`, next to the company. They show `dateRangeShort` on an education entry, such as `'2017 - 2021'`, under or beside the degree. If `dateRangeShort` is missing, no date is shown for that entry. An education entry's `description` is shown below it when there is one.
 
 ### Rich text
 

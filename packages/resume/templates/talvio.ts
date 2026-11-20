@@ -111,10 +111,9 @@ const educationFields: Field<ItemStyle>[] = [
     source: 'objects',
     gap: 'sm',
     items: [
-      // Degree and date are stacked rather than placed in one row: the education
-      // block lives in the narrow 1/3 sidebar, and a start-justified row places the
-      // date after the (possibly wrapped) degree without constraining it to the
-      // remaining width, which clipped the date at the column edge (MDI-422).
+      // Degree and date are stacked rather than placed in one row: the education block
+      // lives in the narrow 1/3 sidebar, where a row would squeeze a long degree into the
+      // space left of the date (MDI-422).
       {
         type: 'text',
         name: 'degree',
@@ -144,6 +143,11 @@ const educationFields: Field<ItemStyle>[] = [
           icon: 'cap',
           iconIndent: 'sm',
         },
+      },
+      {
+        name: 'description',
+        margins: { top: 'sm' },
+        type: 'content',
       },
     ],
   },

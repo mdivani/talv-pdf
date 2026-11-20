@@ -136,7 +136,10 @@ function orphanHeadings(boxes: Box[], fixture: string, pageCount: number) {
         isHeading(box.text.trim()) &&
         !boxes.some(
           (other) =>
-            other.page === box.page && other.y0 < box.y0 - 1 && Math.abs(other.x0 - box.x0) <= 15,
+            other.page === box.page &&
+            other.y0 < box.y0 - 1 &&
+            other.x0 >= box.x0 - 15 &&
+            other.x0 <= box.x0 + 30,
         ),
     )
     .map((box) => `page ${box.page + 1} ends with "${box.text}"`);
@@ -159,9 +162,9 @@ function richTextRuns(content?: Content): string[] {
 function missingRichTextWords(boxes: Box[], fixture: string) {
   const data = fixtures[fixture];
   const drawn = boxes.map((box) => box.text.replace(/\s+/g, '')).join('');
-  // Education descriptions are left out: no built-in template shows them.
   const descriptions = [
     ...(data.experience ?? []),
+    ...(data.education ?? []),
     ...(data.projects ?? []),
     ...(data.recommendations ?? []),
   ].flatMap((entry) => richTextRuns(entry.description));
