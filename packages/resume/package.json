@@ -1,6 +1,6 @@
 {
   "name": "@pdf-tlv/resume",
-  "version": "0.2.4",
+  "version": "0.3.0",
   "description": "A TypeScript module for generating PDF resumes using pdf-lib and @pdf-lib/fontkit.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
