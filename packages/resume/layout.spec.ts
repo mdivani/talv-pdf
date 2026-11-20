@@ -1,6 +1,8 @@
 import { PDFFont, PDFPage } from 'pdf-lib';
 import { ResumePDFService } from './resume-pdf.service';
-import * as templates from './templates';
+import * as builtInTemplates from './templates';
+// Templates built in the playground and not released with the package get the same checks.
+import * as playgroundTemplates from '../../playground/templates';
 import { fixtures } from './fixtures';
 import type { Content, Size, Template } from './types';
 
@@ -159,15 +161,29 @@ function richTextRuns(content?: Content): string[] {
  * spaces, so a word broken across lines still counts. Words the standard fonts can't encode (drawn
  * as `?`) are skipped.
  */
-function missingRichTextWords(boxes: Box[], fixture: string) {
+/** Names of the lists whose entries a template draws a rich-text `description` for. */
+function listsWithDescriptions(template: Template) {
+  const names = new Set<string>();
+  const walk = (groups: Template['groups']) =>
+    groups.forEach((group) => {
+      for (const field of group.fields ?? []) {
+        if (field.items.some((item) => item.type === 'content' && item.name === 'description'))
+          names.add(field.name);
+      }
+      walk(group.groups ?? []);
+    });
+  walk(template.groups);
+  return names;
+}
+
+function missingRichTextWords(boxes: Box[], fixture: string, template: Template) {
   const data = fixtures[fixture];
   const drawn = boxes.map((box) => box.text.replace(/\s+/g, '')).join('');
-  const descriptions = [
-    ...(data.experience ?? []),
-    ...(data.education ?? []),
-    ...(data.projects ?? []),
-    ...(data.recommendations ?? []),
-  ].flatMap((entry) => richTextRuns(entry.description));
+  const lists = listsWithDescriptions(template);
+  const descriptions = (['experience', 'education', 'projects', 'recommendations'] as const)
+    .filter((name) => lists.has(name))
+    .flatMap((name) => (data[name] ?? []) as Array<{ description?: Content }>)
+    .flatMap((entry) => richTextRuns(entry.description));
   return descriptions
     .flatMap((run) => run.split(/\s+/))
     .filter((word) => word && /^[\x20-\x7E\u00A0-\u00FF\u2013-\u2026]+$/.test(word))
@@ -191,7 +207,9 @@ function orphanIcons(icons: Icon[], boxes: Box[]) {
 }
 
 const SIZES: Size[] = ['sm', 'md', 'lg', 'xl'];
+const templates = { ...builtInTemplates, ...playgroundTemplates };
 const templateEntries = Object.entries(templates) as Array<[string, Template]>;
+const builtInEntries = Object.entries(builtInTemplates) as Array<[string, Template]>;
 
 // Every fixture at every font size, with the default leading.
 const cases = templateEntries.flatMap(([templateName, template]) =>
@@ -238,7 +256,7 @@ describe.each([...cases, ...pageBreakCases])(
     });
 
     it('draws every word of rich-text descriptions', () => {
-      expect(missingRichTextWords(result.boxes, fixture)).toEqual([]);
+      expect(missingRichTextWords(result.boxes, fixture, template)).toEqual([]);
     });
 
     it('keeps entry headings with their content', () => {
@@ -252,7 +270,8 @@ describe.each([...cases, ...pageBreakCases])(
 );
 
 // Rows that fit on one line must stay on one line: a date given exactly its own width must not wrap.
-describe.each(templateEntries)('%s rows that fit', (_, template) => {
+// Checked on the built-in layouts, whose date columns are wide enough for any date.
+describe.each(builtInEntries)('%s rows that fit', (_, template) => {
   it.each(['entry', 'mid', 'senior'])(
     'draws every date range of %s on one line',
     async (fixture) => {
@@ -265,8 +284,8 @@ describe.each(templateEntries)('%s rows that fit', (_, template) => {
 });
 
 // Rich text: runs in different fonts share lines, and an empty paragraph between two others leaves
-// a blank line, as in the editor.
-describe.each(templateEntries)('%s rich text', (_, template) => {
+// a blank line, as in the editor. Checked on the built-in layouts, whose columns fit the mixed line.
+describe.each(builtInEntries)('%s rich text', (_, template) => {
   let boxes: Box[];
 
   beforeAll(async () => {
