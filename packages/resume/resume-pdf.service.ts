@@ -17,6 +17,12 @@ function mapStrings<T>(value: T, fn: (text: string) => string): T {
   return value;
 }
 
+type Position = { y: number; pageIndex: number };
+
+/** True when `a` is further down the document than `b`: on a later page, or lower on the same page. */
+const isFurther = (a: Position, b: Position) =>
+  a.pageIndex > b.pageIndex || (a.pageIndex === b.pageIndex && a.y < b.y);
+
 type GenerateParams = {
   data: ResumeData;
   template: Template;
@@ -134,20 +140,35 @@ export class ResumePDFService extends ContentToPdfService {
     }
 
     if (groups) {
-      const horizontalY = currentY;
+      const horizontal = direction === 'horizontal';
+      // Columns side by side all start where the group's content starts.
+      const start = { y: currentY, pageIndex: currentPageIndex };
+      // Where the group ends: the furthest point any sub-group reached.
+      let end = { ...start };
 
       for (const subGroup of groups) {
+        const from = horizontal ? start : { y: currentY, pageIndex: currentPageIndex };
         const result = await this.writeGroup(subGroup, {
-          y: direction === 'horizontal' ? horizontalY : currentY,
+          y: from.y,
           x: currentX,
-          containerWidth: maxWidth - (direction === 'horizontal' ? space : 0),
-          pageIndex: direction === 'horizontal' ? pageIndex : currentPageIndex,
+          containerWidth: maxWidth - (horizontal ? space : 0),
+          pageIndex: from.pageIndex,
         });
 
-        currentY = currentY > result.currentY ? result.currentY - space : currentY;
-        currentX = direction === 'horizontal' ? result.width + space : result.currentX;
-        currentPageIndex = result.pageIndex;
+        // A sub-group that drew nothing leaves the position where it was, without adding the gap.
+        const drewSomething = result.pageIndex !== from.pageIndex || result.currentY !== from.y;
+        const reached = { y: result.currentY - space, pageIndex: result.pageIndex };
+        if (drewSomething && isFurther(reached, end)) end = reached;
+
+        if (!horizontal) {
+          currentY = end.y;
+          currentPageIndex = end.pageIndex;
+        }
+        currentX = horizontal ? result.width + space : result.currentX;
       }
+
+      currentY = end.y;
+      currentPageIndex = end.pageIndex;
     }
 
     if (fields) {

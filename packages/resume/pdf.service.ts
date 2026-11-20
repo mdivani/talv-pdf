@@ -367,6 +367,20 @@ export class BasePDFService {
     return this.$fonts;
   }
 
+  /** Where content starts on every page: the same top margin as the first page. */
+  protected get pageTop() {
+    return this.$height - this.$paddingY;
+  }
+
+  /**
+   * Moves from `pageIndex` to the page after it. Columns side by side share pages, so the page may
+   * already exist (another column broke onto it first); otherwise it is added.
+   */
+  protected async nextPage(pageIndex: number) {
+    if (this.currentPageIndex <= pageIndex) await this.addPage();
+    return pageIndex + 1;
+  }
+
   async addPage() {
     if (!this.$document) throw new Error('Initialise class first');
 
@@ -456,13 +470,8 @@ export class BasePDFService {
     const positionX = x + justifyLine({ justify, textWidth: currentWidth, containerWidth: maxWidth });
 
     if (this.isOverflowing(currentY - offset)) {
-      if (this.currentPageIndex > currentPageIndex) {
-        currentPageIndex += 1;
-        currentY = this.$height - this.$paddingY;
-      } else {
-        currentPageIndex += 1;
-        currentY = await this.addPage();
-      }
+      currentPageIndex = await this.nextPage(currentPageIndex);
+      currentY = this.pageTop - textHeight;
     }
 
     const page = this.$pages[currentPageIndex];
@@ -477,7 +486,8 @@ export class BasePDFService {
       }
       const iconResult = this.drawIcon({
         x: positionX,
-        y,
+        // The top of the line where it was drawn, which is not `y` if the line moved to a new page.
+        y: currentY + textHeight,
         color: 'secondary',
         icon: selectedIcon,
         page,
@@ -636,6 +646,17 @@ export class BasePDFService {
       let positionX = x;
       let previousLineHeight = 0;
 
+      // A row is one line: if its tallest value doesn't fit, move the whole row to the next page
+      // rather than letting values split across pages.
+      const rowHeight = Math.max(
+        0,
+        ...filteredTexts.map((txt) => this.lineHeight(this.fontSize(txt.fontSize), txt.leading)),
+      );
+      if (filteredTexts.length && this.isOverflowing(positionY - rowHeight - (filteredTexts[0].offset ?? 0))) {
+        currentPageIndex = await this.nextPage(currentPageIndex);
+        positionY = this.pageTop;
+      }
+
       for (const [index, txt] of filteredTexts.entries()) {
         const currentFontSize = this.fontSize(txt.fontSize);
         const currentLineHeight = this.lineHeight(currentFontSize, txt.leading);
@@ -655,7 +676,7 @@ export class BasePDFService {
           text: index === 0 ? txt.text : separator + txt.text,
           x: positionX,
           y: positionY,
-          pageIndex,
+          pageIndex: currentPageIndex,
           maxWidth: containerWidth,
         });
 
