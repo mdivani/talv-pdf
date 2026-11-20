@@ -583,7 +583,15 @@ export class BasePDFService {
     const embedded = await Promise.all(
       fontBytes.map(
         async ({ type, arrayBuffer }) =>
-          [type, await doc.embedFont(arrayBuffer, { subset: customFont.subset === true })] as const,
+          [
+            type,
+            // Ligatures off: pdf-lib draws ligature glyphs (such as "ft" in Source Serif 4 italic)
+            // with a gap after them, and they make the text harder to extract.
+            await doc.embedFont(arrayBuffer, {
+              subset: customFont.subset === true,
+              features: { liga: false },
+            }),
+          ] as const,
       ),
     );
 
