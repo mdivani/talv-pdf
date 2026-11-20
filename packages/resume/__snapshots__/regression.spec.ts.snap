@@ -1,0 +1,673 @@
+// Jest Snapshot v1, https://jestjs.io/docs/snapshot-testing
+
+exports[`ember draws as in 0.3.0 entry at lg 1`] = `
+{
+  "calls": 94,
+  "hash": "bac20f250e2fb13131eec62a7435c4658990ed89",
+}
+`;
+
+exports[`ember draws as in 0.3.0 entry at md 1`] = `
+{
+  "calls": 90,
+  "hash": "7aa22cfec67d84f404bec1858e00d580cc260914",
+}
+`;
+
+exports[`ember draws as in 0.3.0 entry at sm 1`] = `
+{
+  "calls": 86,
+  "hash": "799c5b245bbdfbb61d124647cfba1aa11e0b5e56",
+}
+`;
+
+exports[`ember draws as in 0.3.0 entry at xl 1`] = `
+{
+  "calls": 104,
+  "hash": "e1a834c439c3f805827a8e0d52a6e0fd18a6e426",
+}
+`;
+
+exports[`ember draws as in 0.3.0 international at lg 1`] = `
+{
+  "calls": 37,
+  "hash": "cc88044f49d65344d18696d4122fd85e4a57457f",
+}
+`;
+
+exports[`ember draws as in 0.3.0 international at md 1`] = `
+{
+  "calls": 36,
+  "hash": "f069f4fb46e45ac82d30f2a3ebdeb7adf307d2c1",
+}
+`;
+
+exports[`ember draws as in 0.3.0 international at sm 1`] = `
+{
+  "calls": 33,
+  "hash": "d5650867fcf56ba75710eba027bc08983cbefcd6",
+}
+`;
+
+exports[`ember draws as in 0.3.0 international at xl 1`] = `
+{
+  "calls": 39,
+  "hash": "3daadab38738dbc721cc87663f76553f8a1a916a",
+}
+`;
+
+exports[`ember draws as in 0.3.0 longText at lg 1`] = `
+{
+  "calls": 97,
+  "hash": "11f80f47f99d96879a49d07d2a5c24e570f45717",
+}
+`;
+
+exports[`ember draws as in 0.3.0 longText at md 1`] = `
+{
+  "calls": 84,
+  "hash": "df32b8488ea9c63cee8453a840058ee99dd92b8a",
+}
+`;
+
+exports[`ember draws as in 0.3.0 longText at sm 1`] = `
+{
+  "calls": 75,
+  "hash": "6f87c9c4adfe8a02a31f73a9bbbcea66702a5a57",
+}
+`;
+
+exports[`ember draws as in 0.3.0 longText at xl 1`] = `
+{
+  "calls": 102,
+  "hash": "c1dc2f96314afba8b509b9fef86cf580f090c62a",
+}
+`;
+
+exports[`ember draws as in 0.3.0 mid at lg 1`] = `
+{
+  "calls": 101,
+  "hash": "1da975822d459ce68df7275b03c46c07a598a1ae",
+}
+`;
+
+exports[`ember draws as in 0.3.0 mid at md 1`] = `
+{
+  "calls": 90,
+  "hash": "b69cf7f6c9fe935fa532513d08cd119e74ac2dc7",
+}
+`;
+
+exports[`ember draws as in 0.3.0 mid at sm 1`] = `
+{
+  "calls": 87,
+  "hash": "b10f2981e103f21072a247998b3cc4e2abaac6ca",
+}
+`;
+
+exports[`ember draws as in 0.3.0 mid at xl 1`] = `
+{
+  "calls": 107,
+  "hash": "35e15ef38f50f9bf232f753af6e11037154e73e1",
+}
+`;
+
+exports[`ember draws as in 0.3.0 minimal at lg 1`] = `
+{
+  "calls": 2,
+  "hash": "584b33083b5e40120e370add7f9e18b7e2f752c2",
+}
+`;
+
+exports[`ember draws as in 0.3.0 minimal at md 1`] = `
+{
+  "calls": 2,
+  "hash": "387d48170b5ef3b74a72daeac25c26e3e8f213d4",
+}
+`;
+
+exports[`ember draws as in 0.3.0 minimal at sm 1`] = `
+{
+  "calls": 2,
+  "hash": "ad2a80ff29fa4b321c78fd29d583f412cc6dc6f0",
+}
+`;
+
+exports[`ember draws as in 0.3.0 minimal at xl 1`] = `
+{
+  "calls": 2,
+  "hash": "5c94522883ec160f43ef745877fb72e1f10a981f",
+}
+`;
+
+exports[`ember draws as in 0.3.0 multiPage at lg 1`] = `
+{
+  "calls": 182,
+  "hash": "3e97a42eada982aff4a3f9786fa1c7939975f0e7",
+}
+`;
+
+exports[`ember draws as in 0.3.0 multiPage at md 1`] = `
+{
+  "calls": 159,
+  "hash": "7c9779c63fe776feb61259140a185d3fa87c8dcb",
+}
+`;
+
+exports[`ember draws as in 0.3.0 multiPage at sm 1`] = `
+{
+  "calls": 151,
+  "hash": "af0012f29d3a4f7a051d8563b092a879556f7be9",
+}
+`;
+
+exports[`ember draws as in 0.3.0 multiPage at xl 1`] = `
+{
+  "calls": 197,
+  "hash": "df4dbdad45cc0827269e57199a2c71c80117dae4",
+}
+`;
+
+exports[`ember draws as in 0.3.0 richText at lg 1`] = `
+{
+  "calls": 40,
+  "hash": "02d660ad32b3b60f5b83e9c6fdc773e30db246a1",
+}
+`;
+
+exports[`ember draws as in 0.3.0 richText at md 1`] = `
+{
+  "calls": 38,
+  "hash": "8d867dec0e2c53bd28b1dec380cf269f499b08ac",
+}
+`;
+
+exports[`ember draws as in 0.3.0 richText at sm 1`] = `
+{
+  "calls": 38,
+  "hash": "a907ce7039430b937c3e1d9d21724d65445c9852",
+}
+`;
+
+exports[`ember draws as in 0.3.0 richText at xl 1`] = `
+{
+  "calls": 40,
+  "hash": "e51b76f2d8fb6cb6872bc473ef3896d661293882",
+}
+`;
+
+exports[`ember draws as in 0.3.0 senior at lg 1`] = `
+{
+  "calls": 115,
+  "hash": "1fc1ca696948de6d5159659f8ed23d14c6ca83ba",
+}
+`;
+
+exports[`ember draws as in 0.3.0 senior at md 1`] = `
+{
+  "calls": 106,
+  "hash": "08f4dec002fe92bb8ae905bcb2251c07a362b939",
+}
+`;
+
+exports[`ember draws as in 0.3.0 senior at sm 1`] = `
+{
+  "calls": 101,
+  "hash": "583fb1c778dc57b0cbe90c8e2cb3687bbd613f81",
+}
+`;
+
+exports[`ember draws as in 0.3.0 senior at xl 1`] = `
+{
+  "calls": 129,
+  "hash": "154df889f72bc2a36f54df8c6240423248215b32",
+}
+`;
+
+exports[`mint draws as in 0.3.0 entry at lg 1`] = `
+{
+  "calls": 82,
+  "hash": "8ad9e2ee3518e2d06f9729d5dc49127dd4907c86",
+}
+`;
+
+exports[`mint draws as in 0.3.0 entry at md 1`] = `
+{
+  "calls": 77,
+  "hash": "8ab4c7fe0ddf9beece84a3c427d7483c7ca6ce35",
+}
+`;
+
+exports[`mint draws as in 0.3.0 entry at sm 1`] = `
+{
+  "calls": 77,
+  "hash": "f0c33b7b0790396fc54623326124104c7aec9894",
+}
+`;
+
+exports[`mint draws as in 0.3.0 entry at xl 1`] = `
+{
+  "calls": 90,
+  "hash": "74ac12d607d0b265e444f67b697a84c6ebbe56cb",
+}
+`;
+
+exports[`mint draws as in 0.3.0 international at lg 1`] = `
+{
+  "calls": 28,
+  "hash": "30c950c8503a76a91c9c450c1525420692f03689",
+}
+`;
+
+exports[`mint draws as in 0.3.0 international at md 1`] = `
+{
+  "calls": 28,
+  "hash": "2c48b71ab8663f53c56eeb6fad89d97d6df3f2cb",
+}
+`;
+
+exports[`mint draws as in 0.3.0 international at sm 1`] = `
+{
+  "calls": 27,
+  "hash": "0ecabc44285f14a36235d3bd348d53449b57fe43",
+}
+`;
+
+exports[`mint draws as in 0.3.0 international at xl 1`] = `
+{
+  "calls": 28,
+  "hash": "b4960cd7b1f1db9f5e723243e726bf68579d6227",
+}
+`;
+
+exports[`mint draws as in 0.3.0 longText at lg 1`] = `
+{
+  "calls": 71,
+  "hash": "862be2103204e571e88acfdd7733f5905174d3ac",
+}
+`;
+
+exports[`mint draws as in 0.3.0 longText at md 1`] = `
+{
+  "calls": 66,
+  "hash": "3cf1e64bb6ea7ef0e0a5078d8928e21f0cfd6c9a",
+}
+`;
+
+exports[`mint draws as in 0.3.0 longText at sm 1`] = `
+{
+  "calls": 60,
+  "hash": "62fdd8b1a6812ad4ed01ea4dc823ee2090a87868",
+}
+`;
+
+exports[`mint draws as in 0.3.0 longText at xl 1`] = `
+{
+  "calls": 79,
+  "hash": "490b8df138d14326118a4afd8949c1cbb7d81d1a",
+}
+`;
+
+exports[`mint draws as in 0.3.0 mid at lg 1`] = `
+{
+  "calls": 82,
+  "hash": "edd3650d0156ec36d3264ee10d153867029d07e4",
+}
+`;
+
+exports[`mint draws as in 0.3.0 mid at md 1`] = `
+{
+  "calls": 79,
+  "hash": "1e7ebf2c80b61548b322a8aa9c15b57150beab3a",
+}
+`;
+
+exports[`mint draws as in 0.3.0 mid at sm 1`] = `
+{
+  "calls": 79,
+  "hash": "c5f5d9d0478c36097f03a4a8c3ddc5879bba47bc",
+}
+`;
+
+exports[`mint draws as in 0.3.0 mid at xl 1`] = `
+{
+  "calls": 94,
+  "hash": "6cbc13a3c6901f1c3d6425108c24a40cb74a75cd",
+}
+`;
+
+exports[`mint draws as in 0.3.0 minimal at lg 1`] = `
+{
+  "calls": 2,
+  "hash": "d9f91acbcba96941e55865506aa5733dc1370b37",
+}
+`;
+
+exports[`mint draws as in 0.3.0 minimal at md 1`] = `
+{
+  "calls": 2,
+  "hash": "559f60aa09104abe89300f442897699f0ef5eb1d",
+}
+`;
+
+exports[`mint draws as in 0.3.0 minimal at sm 1`] = `
+{
+  "calls": 2,
+  "hash": "16139d211676c845e77a8d9c122eb696c4e0ba10",
+}
+`;
+
+exports[`mint draws as in 0.3.0 minimal at xl 1`] = `
+{
+  "calls": 2,
+  "hash": "9a1822304d145bad2f661e2844b4d255cd7919e5",
+}
+`;
+
+exports[`mint draws as in 0.3.0 multiPage at lg 1`] = `
+{
+  "calls": 159,
+  "hash": "2e6e09744fb562bdafaf2b20faca8d24415961b5",
+}
+`;
+
+exports[`mint draws as in 0.3.0 multiPage at md 1`] = `
+{
+  "calls": 143,
+  "hash": "52cd19f7a2ec530014895bdfeed903962f84ab12",
+}
+`;
+
+exports[`mint draws as in 0.3.0 multiPage at sm 1`] = `
+{
+  "calls": 142,
+  "hash": "4cecd0bd273386bebfde41574e6087eb9cad3cdf",
+}
+`;
+
+exports[`mint draws as in 0.3.0 multiPage at xl 1`] = `
+{
+  "calls": 160,
+  "hash": "c0c3ac01532394fd83e3f1c670f63071141407c1",
+}
+`;
+
+exports[`mint draws as in 0.3.0 richText at lg 1`] = `
+{
+  "calls": 33,
+  "hash": "19fb5248347ca1870d43c82f2d0245890ec9cf97",
+}
+`;
+
+exports[`mint draws as in 0.3.0 richText at md 1`] = `
+{
+  "calls": 32,
+  "hash": "2de9741af95691d7a14cb42985b4020be0b022e5",
+}
+`;
+
+exports[`mint draws as in 0.3.0 richText at sm 1`] = `
+{
+  "calls": 32,
+  "hash": "a376558fe23da02e5e16f57bfbbf15b0e7cc6250",
+}
+`;
+
+exports[`mint draws as in 0.3.0 richText at xl 1`] = `
+{
+  "calls": 34,
+  "hash": "b43732dfe09a8d3bbcb536faa74841edef7b3f58",
+}
+`;
+
+exports[`mint draws as in 0.3.0 senior at lg 1`] = `
+{
+  "calls": 99,
+  "hash": "d32dfe1ea4cce47b34ed8bb71a55f1e90506ddd0",
+}
+`;
+
+exports[`mint draws as in 0.3.0 senior at md 1`] = `
+{
+  "calls": 93,
+  "hash": "8f382c53b64e2537fd7ac8784db29826bf9602e8",
+}
+`;
+
+exports[`mint draws as in 0.3.0 senior at sm 1`] = `
+{
+  "calls": 91,
+  "hash": "e0beeaec9616d9bc99481035e80346abd8146f66",
+}
+`;
+
+exports[`mint draws as in 0.3.0 senior at xl 1`] = `
+{
+  "calls": 113,
+  "hash": "a5e43fe44d51f02d4afef7d5c7bcfaaa06a6877b",
+}
+`;
+
+exports[`talvio draws as in 0.3.0 entry at lg 1`] = `
+{
+  "calls": 107,
+  "hash": "798428a6bdd1d9684052b4e95a1f44d9426dd20f",
+}
+`;
+
+exports[`talvio draws as in 0.3.0 entry at md 1`] = `
+{
+  "calls": 98,
+  "hash": "1247bffbd720ac3855782dfb53c7f3c15340df72",
+}
+`;
+
+exports[`talvio draws as in 0.3.0 entry at sm 1`] = `
+{
+  "calls": 95,
+  "hash": "3fba4ac7da0ffb2e217f5bda083f9efa8519cbf8",
+}
+`;
+
+exports[`talvio draws as in 0.3.0 entry at xl 1`] = `
+{
+  "calls": 118,
+  "hash": "71cf9115d7247331212d809bffee5d381e1845a8",
+}
+`;
+
+exports[`talvio draws as in 0.3.0 international at lg 1`] = `
+{
+  "calls": 42,
+  "hash": "85ce778d25275acbacc55da9e2857c8da0172d2b",
+}
+`;
+
+exports[`talvio draws as in 0.3.0 international at md 1`] = `
+{
+  "calls": 40,
+  "hash": "947d297338e6d6056fa71c17631c13cc952350f4",
+}
+`;
+
+exports[`talvio draws as in 0.3.0 international at sm 1`] = `
+{
+  "calls": 40,
+  "hash": "33ccfb87937c1ccfe58182b8375ba55f977043ec",
+}
+`;
+
+exports[`talvio draws as in 0.3.0 international at xl 1`] = `
+{
+  "calls": 43,
+  "hash": "89335784fb96a7dacafc68abb69164a44e4f4f38",
+}
+`;
+
+exports[`talvio draws as in 0.3.0 longText at lg 1`] = `
+{
+  "calls": 117,
+  "hash": "fdfd2f400d44476510932aa4961988212f924505",
+}
+`;
+
+exports[`talvio draws as in 0.3.0 longText at md 1`] = `
+{
+  "calls": 100,
+  "hash": "fad85e2b68ef82e0c90747930dfe8735f24033f0",
+}
+`;
+
+exports[`talvio draws as in 0.3.0 longText at sm 1`] = `
+{
+  "calls": 88,
+  "hash": "bdbda4b44f9171ac3f0fee5a0bec170dc72e19ef",
+}
+`;
+
+exports[`talvio draws as in 0.3.0 longText at xl 1`] = `
+{
+  "calls": 132,
+  "hash": "57222b9340c1d0956644d6da9231e747d0ba4a00",
+}
+`;
+
+exports[`talvio draws as in 0.3.0 mid at lg 1`] = `
+{
+  "calls": 110,
+  "hash": "16c17b8986ef74945a332524667b1df9acfdfe12",
+}
+`;
+
+exports[`talvio draws as in 0.3.0 mid at md 1`] = `
+{
+  "calls": 106,
+  "hash": "f5d21c4d1e55644ce5f45553c8f1e36f74ec26dc",
+}
+`;
+
+exports[`talvio draws as in 0.3.0 mid at sm 1`] = `
+{
+  "calls": 98,
+  "hash": "edae2f5a0048dc7f73c774a3c94df435584022a0",
+}
+`;
+
+exports[`talvio draws as in 0.3.0 mid at xl 1`] = `
+{
+  "calls": 121,
+  "hash": "8951425903762c301a92af185b63814a9b6caba0",
+}
+`;
+
+exports[`talvio draws as in 0.3.0 minimal at lg 1`] = `
+{
+  "calls": 2,
+  "hash": "584b33083b5e40120e370add7f9e18b7e2f752c2",
+}
+`;
+
+exports[`talvio draws as in 0.3.0 minimal at md 1`] = `
+{
+  "calls": 2,
+  "hash": "387d48170b5ef3b74a72daeac25c26e3e8f213d4",
+}
+`;
+
+exports[`talvio draws as in 0.3.0 minimal at sm 1`] = `
+{
+  "calls": 2,
+  "hash": "ad2a80ff29fa4b321c78fd29d583f412cc6dc6f0",
+}
+`;
+
+exports[`talvio draws as in 0.3.0 minimal at xl 1`] = `
+{
+  "calls": 2,
+  "hash": "5c94522883ec160f43ef745877fb72e1f10a981f",
+}
+`;
+
+exports[`talvio draws as in 0.3.0 multiPage at lg 1`] = `
+{
+  "calls": 206,
+  "hash": "f2edf0772ba24a459852a860d11799e07b12d9b8",
+}
+`;
+
+exports[`talvio draws as in 0.3.0 multiPage at md 1`] = `
+{
+  "calls": 190,
+  "hash": "d259e2b7e2ebea9eddd692beac506c1014cced47",
+}
+`;
+
+exports[`talvio draws as in 0.3.0 multiPage at sm 1`] = `
+{
+  "calls": 169,
+  "hash": "b829d8ffc8ef80a00225ae619013d05b54c6e056",
+}
+`;
+
+exports[`talvio draws as in 0.3.0 multiPage at xl 1`] = `
+{
+  "calls": 216,
+  "hash": "6f91dcad9f502405f155daf868ef8640a754895f",
+}
+`;
+
+exports[`talvio draws as in 0.3.0 richText at lg 1`] = `
+{
+  "calls": 32,
+  "hash": "37c2e9b68eb9962bc966902879f575369814c14d",
+}
+`;
+
+exports[`talvio draws as in 0.3.0 richText at md 1`] = `
+{
+  "calls": 31,
+  "hash": "81c4c4401f5eec6572bed28c0bb9c00ffd4f6d38",
+}
+`;
+
+exports[`talvio draws as in 0.3.0 richText at sm 1`] = `
+{
+  "calls": 31,
+  "hash": "d3d37abdc338f31d87dcbbb5bdaa2ada5a241281",
+}
+`;
+
+exports[`talvio draws as in 0.3.0 richText at xl 1`] = `
+{
+  "calls": 36,
+  "hash": "d73cbec10e883c7a2890f0f56d757fa62bedaf7a",
+}
+`;
+
+exports[`talvio draws as in 0.3.0 senior at lg 1`] = `
+{
+  "calls": 133,
+  "hash": "5fe31bbf1c62e85096c978d15cf69964614fb473",
+}
+`;
+
+exports[`talvio draws as in 0.3.0 senior at md 1`] = `
+{
+  "calls": 126,
+  "hash": "13c187572116d0e411b1024dfaf25b520ccb1958",
+}
+`;
+
+exports[`talvio draws as in 0.3.0 senior at sm 1`] = `
+{
+  "calls": 116,
+  "hash": "66b676e340e3dd8215bf700170ad72d7b49e15a3",
+}
+`;
+
+exports[`talvio draws as in 0.3.0 senior at xl 1`] = `
+{
+  "calls": 144,
+  "hash": "f0882a8fa376397a1a3af4dec8cb7aedf7d09b37",
+}
+`;
