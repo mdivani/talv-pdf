@@ -424,7 +424,8 @@ export class BasePDFService {
     const fontBytes = await this.loadFonts(customFont);
     const embedded = await Promise.all(
       fontBytes.map(
-        async ({ type, arrayBuffer }) => [type, await doc.embedFont(arrayBuffer)] as const,
+        async ({ type, arrayBuffer }) =>
+          [type, await doc.embedFont(arrayBuffer, { subset: customFont.subset === true })] as const,
       ),
     );
 

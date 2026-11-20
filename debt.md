@@ -2,13 +2,17 @@
 
 Known issues that have a workaround in place but still need a proper fix.
 
-## Custom fonts are embedded in full
+## Inter is embedded in full
 
-**Where:** `embedFonts` in `packages/resume/pdf.service.ts`.
+**Where:** `embedFonts` in `packages/resume/pdf.service.ts`, `interFont` in `packages/resume/assets.ts`.
 
-**Problem:** When a custom font such as `interFont` is set, the five font files are embedded whole, so a one-page resume is about 930 KB instead of about 10 KB with the default Helvetica.
+**Problem:** A resume with `interFont` is about 920 KB, because the five Inter files are embedded whole. With the default Helvetica it is about 10 KB.
 
-**Fix:** Embed with `doc.embedFont(bytes, { subset: true })`. A quick test brings the file back to about 6 KB. `@pdf-lib/fontkit` subsetting has known glyph bugs with some fonts, so check the output in Acrobat, Chrome and macOS Preview, including non-Latin text, before switching it on.
+Subsetting with `@pdf-lib/fontkit` (`embedFont(bytes, { subset: true })`) can't fix it for Inter. With the Inter v19 files from Google Fonts it drops most glyphs: "Maya Lindqvist" renders as "aya L n" in both pdf.js and macOS Preview. Text extraction still works, so the text layer hides the problem. Roboto from Google Fonts subsets correctly (400 KB to 41 KB, renders the same).
+
+**Workaround in place:** Custom fonts can opt in with `subset: true` on the `CustomFont`. It is off by default and `interFont` doesn't set it. A test checks that `interFont` never turns it on.
+
+**Fix:** Either find an Inter build that `@pdf-lib/fontkit` subsets correctly (for example the static TTFs from the Inter GitHub releases) and point `interFont` at it, or subset with HarfBuzz (`hb-subset`) before embedding. The HarfBuzz route needs the characters each font uses before `save()`, so it means rendering twice or collecting text during layout. Compare full and subset renders in pdf.js and macOS Preview before switching, including accented and Cyrillic text.
 
 ## Entry headings can be left alone at the bottom of a page
 

@@ -155,6 +155,8 @@ await service.generate({
 
 All five font weights are required. If a file can't be downloaded, `create()` or `generate()` rejects with an error naming the file. Font files are downloaded once and cached on the service, so later renders with the same font don't download them again. The service keeps the `create()` font and the most recent other font.
 
+Custom fonts are embedded whole, so a resume with Inter is about 920 KB. Set `subset: true` on a custom font to embed only the characters the resume uses, which brings a Roboto resume from about 400 KB to about 40 KB. Subsetting is off by default because the subsetter drops glyphs from some fonts, including Inter as served by Google Fonts, so check a few PDFs before you turn it on for a font.
+
 ### Colors
 
 Templates refer to three color slots. Set any of them with `colors` in `create()`, or per render in `generate()` options.

@@ -1,4 +1,4 @@
-import { PDFDocument, PDFDict, PDFName } from 'pdf-lib';
+import { PDFDocument, PDFDict, PDFName, StandardFonts } from 'pdf-lib';
 import { ResumePDFService } from './resume-pdf.service';
 import { interFont } from './assets';
 import { talvio, ember, mint } from './templates';
@@ -87,5 +87,64 @@ describe('default fonts', () => {
     await expect(service.create({ isPreview: false, customFont: interFont })).rejects.toThrow(
       /Could not download the \w+ font .* HTTP 404/,
     );
+  });
+});
+
+describe('custom font subsetting', () => {
+  const realFetch = global.fetch;
+  const realEmbed = PDFDocument.prototype.embedFont;
+  let subsetOptions: Array<boolean | undefined>;
+
+  beforeEach(() => {
+    subsetOptions = [];
+    // Serve placeholder font bytes and embed Helvetica in their place: the test only checks which
+    // options reach pdf-lib, not the font itself.
+    global.fetch = (async () => new Response(new Uint8Array([0, 1, 0, 0]))) as typeof fetch;
+    jest.spyOn(PDFDocument.prototype, 'embedFont').mockImplementation(function (
+      this: PDFDocument,
+      font,
+      options,
+    ) {
+      if (typeof font === 'string') return realEmbed.call(this, font, options);
+      subsetOptions.push(options?.subset);
+      return realEmbed.call(this, StandardFonts.Helvetica);
+    });
+  });
+
+  afterEach(() => {
+    global.fetch = realFetch;
+    jest.restoreAllMocks();
+  });
+
+  const font = (subset?: boolean) => ({
+    name: 'Test',
+    subset,
+    fonts: {
+      regular: 'https://example.com/r.ttf',
+      semibold: 'https://example.com/s.ttf',
+      bold: 'https://example.com/b.ttf',
+      italic: 'https://example.com/i.ttf',
+      'bold-italic': 'https://example.com/bi.ttf',
+    },
+  });
+
+  it('embeds custom fonts whole unless subsetting is turned on', async () => {
+    const service = new ResumePDFService();
+    await service.create({ isPreview: false, customFont: font() });
+    await service.generate({ data: entry, template: talvio });
+
+    expect(subsetOptions).toEqual([false, false, false, false, false]);
+  });
+
+  it('subsets custom fonts that ask for it', async () => {
+    const service = new ResumePDFService();
+    await service.create({ isPreview: false, customFont: font(true) });
+    await service.generate({ data: entry, template: talvio });
+
+    expect(subsetOptions).toEqual([true, true, true, true, true]);
+  });
+
+  it('never subsets the bundled Inter, which the subsetter breaks', () => {
+    expect(interFont.subset).not.toBe(true);
   });
 });
