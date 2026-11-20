@@ -23,7 +23,13 @@ export type FontFamily = 'body' | 'serif' | 'mono';
 export type FontType = 'regular' | 'semibold' | 'bold' | 'italic' | 'bold-italic';
 export type Justify = 'left' | 'right' | 'center';
 export type Align = 'top' | 'bottom' | 'middle';
-export type RowJustify = 'between' | 'center' | 'start';
+/**
+ * How a row places its values. `between`: first value on the left, last on the right, the rest
+ * spread between. `split`: every value but the last flows from the left, and the last sits on the
+ * right ("Title · Company ... Date"). `start`, `center`, `end`: the values flow from the left, from
+ * the middle or from the right.
+ */
+export type RowJustify = 'between' | 'split' | 'center' | 'start' | 'end';
 export type IconTypes = keyof typeof svg;
 
 export interface Margins {

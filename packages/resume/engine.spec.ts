@@ -982,6 +982,56 @@ describe('aside and timeline', () => {
   });
 });
 
+describe('row justification', () => {
+  const row = (justify: 'split' | 'end', keys: string[]): Template => ({
+    groups: [
+      section('experience', [
+        {
+          name: 'experience',
+          source: 'objects',
+          items: [
+            {
+              type: 'row',
+              keys,
+              item: {
+                justify,
+                containerWidth: 0,
+                separator: ' · ',
+                texts: Object.fromEntries(keys.map((key) => [key, style()])),
+              },
+            },
+          ],
+        },
+      ]),
+    ],
+  });
+  const data = { ...mid, experience: mid.experience?.slice(0, 1) };
+  const entry = data.experience?.[0];
+  const right = page.width - page.padding;
+
+  it('split: flows the first values from the left and puts the last on the right', async () => {
+    const { texts } = await record(row('split', ['jobTitle', 'company', 'dateRange']), data);
+    const title = textOf(texts, entry?.jobTitle ?? '');
+    const company = textOf(texts, `· ${entry?.company}`);
+    const date = textOf(texts, entry?.dateRange ?? '');
+    expect(title.x).toBe(page.padding);
+    // The company follows the title, with the separator, not spread out to the middle.
+    expect(company.x).toBeCloseTo(title.x + title.width, 0);
+    // The date stands alone on the right, without a separator.
+    expect(date.text).toBe(entry?.dateRange);
+    expect(date.x + date.width).toBeCloseTo(right, 0);
+    expect(new Set([title.y, company.y, date.y]).size).toBe(1);
+  });
+
+  it('end: lines up the values on the right', async () => {
+    const { texts } = await record(row('end', ['company', 'dateRange']), data);
+    const date = textOf(texts, `· ${entry?.dateRange}`);
+    const company = textOf(texts, entry?.company ?? '');
+    expect(date.x + date.width).toBeCloseTo(right, 0);
+    expect(company.x).toBeGreaterThan(page.padding + 100);
+  });
+});
+
 describe('reading order', () => {
   it('writes the main column of a two-column template before the side column', async () => {
     const { texts } = await record(talvio, senior);

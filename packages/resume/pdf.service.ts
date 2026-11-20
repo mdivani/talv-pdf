@@ -46,6 +46,7 @@ import {
   CustomFont,
   Watermark,
   IconTypes,
+  Justify,
 } from './types';
 import { getFontSize, getLineHeight, getSeparatorSize, getSpacing, justifyLine } from './utils';
 import { iconScaleMap } from './constants';
@@ -977,7 +978,7 @@ export class BasePDFService {
       atX: number,
       lineTop: number,
       maxWidth: number,
-      justify: 'left' | 'center' = 'left',
+      justify: Justify = 'left',
     ) => {
       const result = await this.writeMultiLine({
         ...values[i],
@@ -1008,10 +1009,10 @@ export class BasePDFService {
     };
 
     /**
-     * Writes values between `left` and `left + width`, as many per line as fit. Lines are centered
-     * when `center` is set. A value wider than the whole width gets a line of its own and wraps.
+     * Writes values between `left` and `left + width`, as many per line as fit, with each line
+     * aligned by `align`. A value wider than the whole width gets a line of its own and wraps.
      */
-    const flow = async (indices: number[], left: number, width: number, center: boolean) => {
+    const flow = async (indices: number[], left: number, width: number, align: Justify) => {
       const lines: number[][] = [];
       let used = 0;
       for (const i of indices) {
@@ -1041,9 +1042,10 @@ export class BasePDFService {
         );
         if (lineWidth > width) {
           // A single value too wide for the line: wrap it across the full width.
-          await write(line[0], true, left, lineTop, width, center ? 'center' : 'left');
+          await write(line[0], true, left, lineTop, width, align);
         } else {
-          let cursor = center ? left + (width - lineWidth) / 2 : left;
+          let cursor =
+            left + justifyLine({ justify: align, textWidth: lineWidth, containerWidth: width });
           for (const [index, i] of line.entries()) {
             await write(i, index === 0, cursor, lineTop, left + width - cursor);
             cursor += widthOf(i, index === 0) + space;
@@ -1067,14 +1069,20 @@ export class BasePDFService {
         await write(i, i === 0, atX, top, right - atX);
         cursor += width + between;
       }
-    } else if (justify === 'between' && last > 0 && widthOf(last, false) <= containerWidth / 2) {
+    } else if (
+      (justify === 'between' || justify === 'split') &&
+      last > 0 &&
+      widthOf(last, justify === 'split') <= containerWidth / 2
+    ) {
       // Keep the last value (usually a date) on the right of the first line and wrap the rest in the
-      // space left.
-      const lastWidth = widthOf(last, false);
-      await write(last, false, right - lastWidth, top, lastWidth);
-      await flow(all.slice(0, last), x, containerWidth - lastWidth - space, false);
+      // space left. In a `split` row the last value stands apart, so it gets no separator.
+      const alone = justify === 'split';
+      const lastWidth = widthOf(last, alone);
+      await write(last, alone, right - lastWidth, top, lastWidth);
+      await flow(all.slice(0, last), x, containerWidth - lastWidth - space, 'left');
     } else {
-      await flow(all, x, containerWidth, justify === 'center');
+      const align = justify === 'center' ? 'center' : justify === 'end' ? 'right' : 'left';
+      await flow(all, x, containerWidth, align);
     }
 
     return {
