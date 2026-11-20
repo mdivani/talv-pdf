@@ -69,7 +69,7 @@ describe('utils', () => {
       expect(justifyLine({ justify: 'right', textWidth: 20, containerWidth: 100 })).toBe(80);
     });
     it('returns correct offset for center justify', () => {
-      expect(justifyLine({ justify: 'center', textWidth: 20, containerWidth: 100 })).toBe(60);
+      expect(justifyLine({ justify: 'center', textWidth: 20, containerWidth: 100 })).toBe(40);
     });
     it('returns 0 for left or unknown justify', () => {
       expect(justifyLine({ justify: 'left', textWidth: 20, containerWidth: 100 })).toBe(0);

@@ -292,7 +292,8 @@ export class ResumePDFService extends ContentToPdfService {
     if (item.type === 'text') {
       const result = await this.writeMultiLine({
         ...item.item,
-        maxWidth: item.item.maxWidth || maxWidth,
+        // A template's maxWidth can narrow a text item, never widen it past its column.
+        maxWidth: Math.min(item.item.maxWidth || maxWidth, maxWidth),
         font: item.item.font || 'regular',
         pageIndex: currentPageIndex,
         y: currentY,
@@ -377,13 +378,15 @@ export class ResumePDFService extends ContentToPdfService {
         offset: 70,
       });
 
-      const labelWidth = label.maxWidth || result.width;
+      // A horizontal label's value starts at `label.maxWidth` from the page edge, the column the
+      // template lines values up on, or right after the label if the label is wider than that.
+      const valueX = Math.max(label.maxWidth || 0, currentX + result.width + this.spacing('sm'));
 
       currentY = result.pageIndex === currentPageIndex ? currentY : result.nextY + result.height;
       currentY = label.direction === 'horizontal' ? currentY : result.nextY - this.spacing(bottom);
-      currentX = label.direction === 'horizontal' ? labelWidth : currentX;
       currentMaxWidth =
-        label.direction === 'horizontal' ? currentMaxWidth - labelWidth : currentMaxWidth;
+        label.direction === 'horizontal' ? currentMaxWidth - valueX : currentMaxWidth;
+      currentX = label.direction === 'horizontal' ? valueX : currentX;
       currentPageIndex = result.pageIndex;
     }
 

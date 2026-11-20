@@ -26,6 +26,8 @@ async function renderAndRecord(
   };
   const boxes: Box[] = [];
   const icons: Icon[] = [];
+  /** drawText calls that asked pdf-lib to wrap: what it draws would then differ from what is recorded. */
+  let wrappedByPdfLib = 0;
 
   const drawText = PDFPage.prototype.drawText;
   const drawSvgPath = PDFPage.prototype.drawSvgPath;
@@ -36,20 +38,25 @@ async function renderAndRecord(
   ) {
     const size = options.size ?? 12;
     const font = options.font as PDFFont | undefined;
-    const width = font ? font.widthOfTextAtSize(text, size) : 0;
     const x = options.x ?? 0;
     const y = options.y ?? 0;
-    // Ignore the watermark and whitespace-only runs: they never collide with content.
-    if (text.trim() && font) {
+    // Record each drawn line (pdf-lib draws lines below the first, lineHeight apart). Ignore the
+    // watermark (no font) and whitespace-only lines: they never collide with content.
+    if (options.maxWidth !== undefined) wrappedByPdfLib++;
+    const lineHeight = options.lineHeight ?? size;
+    text.split('\n').forEach((line, index) => {
+      if (!line.trim() || !font) return;
+      const width = font.widthOfTextAtSize(line, size);
+      const lineY = y - index * lineHeight;
       boxes.push({
         page: pageOf(this),
-        text,
+        text: line,
         x0: x,
         x1: x + width,
-        y0: y - size * 0.2,
-        y1: y + size * 0.72,
+        y0: lineY - size * 0.2,
+        y1: lineY + size * 0.72,
       });
-    }
+    });
     return drawText.call(this, text, options);
   });
   const iconSpy = jest.spyOn(PDFPage.prototype, 'drawSvgPath').mockImplementation(function (
@@ -65,7 +72,7 @@ async function renderAndRecord(
     const service = new ResumePDFService();
     await service.create({ isPreview: false, fontSize, leading });
     await service.generate({ data: fixtures[fixture], template });
-    return { boxes, icons, pageCount: pages.size };
+    return { boxes, icons, pageCount: pages.size, wrappedByPdfLib };
   } finally {
     textSpy.mockRestore();
     iconSpy.mockRestore();
@@ -96,6 +103,12 @@ function offPageVertically(boxes: Box[]) {
   return boxes
     .filter((b) => b.y0 < 0 || b.y1 > PAGE.height)
     .map((b) => `page ${b.page + 1}: "${b.text}" at y=${b.y0.toFixed(0)}`);
+}
+
+function offPageHorizontally(boxes: Box[]) {
+  return boxes
+    .filter((b) => b.x0 < 0 || b.x1 > PAGE.width)
+    .map((b) => `page ${b.page + 1}: "${b.text}" from x=${b.x0.toFixed(0)} to ${b.x1.toFixed(0)}`);
 }
 
 /** An icon belongs to the text drawn just to its right on the same line. */
@@ -136,55 +149,29 @@ const pageBreakCases = templateEntries.flatMap(([templateName, template]) =>
   ),
 );
 
-/**
- * Overlaps caused by values wider than their column (debt.md: "Row values are not limited to the
- * width left on the line"). They are expected to fail until that is fixed; once a case passes, Jest
- * reports it so it can be removed from this list.
- */
-const KNOWN_WIDTH_OVERLAPS = new Set([
-  'ember × longText at lg/md',
-  'ember × longText at xl/md',
-  'mint × entry at xl/md',
-  'mint × international at xl/md',
-  'mint × longText at xl/md',
-  'mint × mid at xl/md',
-  'mint × multiPage at xl/lg',
-  'mint × multiPage at xl/md',
-  'mint × multiPage at xl/sm',
-  'mint × multiPage at xl/xl',
-  'mint × senior at xl/lg',
-  'mint × senior at xl/md',
-  'mint × senior at xl/sm',
-  'mint × senior at xl/xl',
-  'talvio × longText at lg/md',
-  'talvio × longText at md/md',
-  'talvio × longText at sm/md',
-  'talvio × longText at xl/md',
-  'talvio × senior at xl/lg',
-  'talvio × senior at xl/md',
-  'talvio × senior at xl/sm',
-  'talvio × senior at xl/xl',
-]);
-
 describe.each([...cases, ...pageBreakCases])(
   '%s × %s at %s/%s',
-  (templateName, fixture, fontSize, leading, template) => {
+  (_, fixture, fontSize, leading, template) => {
     let result: Awaited<ReturnType<typeof renderAndRecord>>;
 
     beforeAll(async () => {
       result = await renderAndRecord(template, fixture, fontSize, leading);
     });
 
-    const knownOverlap = KNOWN_WIDTH_OVERLAPS.has(
-      `${templateName} × ${fixture} at ${fontSize}/${leading}`,
-    );
-
-    (knownOverlap ? it.failing : it)('draws no text over other text', () => {
+    it('draws no text over other text', () => {
       expect(overlaps(result.boxes)).toEqual([]);
+    });
+
+    it('wraps all text itself instead of leaving it to pdf-lib', () => {
+      expect(result.wrappedByPdfLib).toBe(0);
     });
 
     it('keeps text on the page vertically', () => {
       expect(offPageVertically(result.boxes)).toEqual([]);
+    });
+
+    it('keeps text on the page horizontally', () => {
+      expect(offPageHorizontally(result.boxes)).toEqual([]);
     });
 
     it('draws every icon next to its text', () => {
@@ -192,3 +179,16 @@ describe.each([...cases, ...pageBreakCases])(
     });
   },
 );
+
+// Rows that fit on one line must stay on one line: a date given exactly its own width must not wrap.
+describe.each(templateEntries)('%s rows that fit', (_, template) => {
+  it.each(['entry', 'mid', 'senior'])(
+    'draws every date range of %s on one line',
+    async (fixture) => {
+      const { boxes } = await renderAndRecord(template, fixture, 'md');
+      const drawn = new Set(boxes.map((box) => box.text.trim()));
+      const dates = (fixtures[fixture].experience ?? []).map((entry) => entry.dateRange);
+      expect(dates.filter((date) => !drawn.has(date))).toEqual([]);
+    },
+  );
+});

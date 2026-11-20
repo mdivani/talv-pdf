@@ -63,7 +63,7 @@ export function justifyLine({ justify, textWidth, containerWidth }: JustifyLineP
   }
 
   if (justify === 'center') {
-    return (containerWidth + textWidth) / 2;
+    return (containerWidth - textWidth) / 2;
   }
 
   return 0;

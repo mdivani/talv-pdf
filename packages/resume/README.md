@@ -300,7 +300,7 @@ Add `join` to a field to merge a list into one line instead, for example to show
 | Type | Draws |
 | --- | --- |
 | `text` | One value from the data. Long text wraps to the available width. |
-| `row` | Several values on one line, listed in `keys`. `justify` can be `'between'`, `'center'` or `'start'`, and `separator` adds text such as `' \| '` between values. Later values are not limited to the space left on the line, so use rows only where every value fits on one line. In narrow columns, stack values as separate `text` items instead. |
+| `row` | Several values on one line, listed in `keys`. `justify` can be `'between'`, `'center'` or `'start'`, and `separator` adds text such as `' \| '` between values. When the values don't fit on one line, the last value of a `'between'` row (usually a date) stays on the right and the others wrap in the space left. Otherwise values move to new lines, and a separator is never drawn at the start of a line. |
 | `content` | A rich text document from the data. |
 
 Text styles take a required `fontSize`, `font` and `color`, and these optional settings:

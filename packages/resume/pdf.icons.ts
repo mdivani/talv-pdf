@@ -1,11 +1,19 @@
 import { getIconPath } from './utils';
 import { BasePDFService, DEFAULT_CONFIG } from './pdf.service';
-import { DrawIconParams } from './types';
+import { DrawIconParams, IconTypes, Size } from './types';
 import { iconScaleMap } from './constants';
 
 export class PDFIcons extends BasePDFService {
   constructor(config = DEFAULT_CONFIG) {
     super(config);
+  }
+
+  /** Width of an icon as drawn by `drawIcon`, for measuring a line before drawing it. */
+  iconWidth(icon: IconTypes, size: Size) {
+    if (icon === 'link') return 10 * iconScaleMap[size] + 4;
+    if (['email', 'linkedin', 'pin', 'phone', 'cap'].includes(icon))
+      return 10 * iconScaleMap[size] + 2;
+    return super.iconWidth(icon, size);
   }
 
   drawIcon({ icon, ...params }: DrawIconParams) {
