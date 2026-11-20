@@ -9,5 +9,5 @@
     "skipLibCheck": true
   },
   "include": ["**/*"],
-  "exclude": ["dist", "node_modules", "**/*.spec.ts"]
+  "exclude": ["dist", "node_modules", "**/*.spec.ts", "fixtures"]
 }

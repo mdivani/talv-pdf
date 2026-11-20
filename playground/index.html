@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Resume template playground</title>
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <aside class="sidebar">
+      <h1>Template playground</h1>
+
+      <label>
+        View
+        <select id="mode">
+          <option value="single">One resume</option>
+          <option value="fixtures">Template × every fixture</option>
+          <option value="templates">Fixture × every template</option>
+        </select>
+      </label>
+
+      <label id="template-field">
+        Template
+        <select id="template"></select>
+      </label>
+
+      <label id="fixture-field">
+        Fixture
+        <select id="fixture"></select>
+      </label>
+
+      <label>
+        Accent color
+        <span class="color-row">
+          <input id="color" type="color" />
+          <span id="swatches" class="swatches"></span>
+        </span>
+      </label>
+
+      <div class="pair">
+        <label>
+          Font size
+          <select id="fontSize">
+            <option>sm</option>
+            <option>md</option>
+            <option>lg</option>
+            <option>xl</option>
+          </select>
+        </label>
+        <label>
+          Leading
+          <select id="leading">
+            <option>sm</option>
+            <option>md</option>
+            <option>lg</option>
+            <option>xl</option>
+          </select>
+        </label>
+      </div>
+
+      <label>
+        Zoom <output id="zoom-value"></output>
+        <input id="zoom" type="range" min="0.3" max="2" step="0.05" />
+      </label>
+
+      <button id="download" type="button">Download PDF</button>
+
+      <p id="status" class="status"></p>
+
+      <p class="hint">
+        Edit files in <code>packages/resume/templates</code>, <code>fixtures</code> or the engine
+        and the preview updates on save. New templates and fixtures appear once they are exported
+        from their <code>index.ts</code>.
+      </p>
+    </aside>
+
+    <main id="preview" class="preview"></main>
+
+    <pre id="error" class="error" hidden></pre>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
