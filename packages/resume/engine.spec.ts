@@ -630,6 +630,110 @@ describe('labels', () => {
   });
 });
 
+describe('page breaks', () => {
+  const filler = section('filler', [experience()]);
+
+  it('keeps a label bar with its label, and both with the start of the section', async () => {
+    const template: Template = {
+      groups: [
+        filler,
+        section(
+          'projects',
+          [{ name: 'projects', source: 'objects', items: [text('projectName')] }],
+          {
+            label: label('Projects', {
+              color: 'onSecondary',
+              background: { color: 'secondary' },
+              padding: { x: 'md', y: 'sm' },
+            }),
+          },
+        ),
+      ],
+    };
+    let crossed = false;
+    for (let count = 1; count <= 7; count++) {
+      const data = { ...multiPage, experience: multiPage.experience?.slice(0, count) };
+      const { texts, backgrounds } = await record(template, data);
+      const heading = textOf(texts, 'Projects');
+      const bar = backgrounds[0];
+      const first = textOf(texts, data.projects?.[0].projectName ?? '');
+      crossed ||= heading.page > 0;
+      expect(bar.pageIndex).toBe(heading.page);
+      expect(inside([heading], bar)).toBe(true);
+      expect(first.page).toBe(heading.page);
+      expect(first.y + first.size * 0.72).toBeLessThan(bar.y);
+    }
+    // Some filler length pushed the section onto the next page.
+    expect(crossed).toBe(true);
+  });
+
+  it('keeps each chip of a list inside an entry around its own text, across pages', async () => {
+    const template: Template = {
+      groups: [
+        section('experience', [
+          experience({
+            items: [
+              text('jobTitle', { font: 'semibold' }),
+              {
+                type: 'list',
+                name: 'stack',
+                output: 'row',
+                gap: 'sm',
+                chip: { background: { border: { color: 'neutral' }, radius: 3 } },
+                item: style({ fontSize: 'sm' }),
+              },
+              { type: 'content', name: 'description', margins: { top: 'sm' } },
+            ],
+          }),
+        ]),
+      ],
+    };
+    const stack = ['TypeScript', 'React', 'PostgreSQL', 'Kubernetes', 'Terraform', 'Kafka'];
+    const data = {
+      ...multiPage,
+      experience: multiPage.experience?.map((entry) => ({ ...entry, stack })),
+    };
+    const { texts, backgrounds, pageCount } = await record(template, data, { fontSize: 'xl' });
+    expect(pageCount).toBeGreaterThan(1);
+    const chips = texts.filter((t) => stack.includes(t.text));
+    expect(chips).toHaveLength(stack.length * (data.experience?.length ?? 0));
+    expect(backgrounds).toHaveLength(chips.length);
+    for (const chip of chips) {
+      const box = backgrounds.find(
+        (b) =>
+          b.pageIndex === chip.page && inside([chip], b) && chip.x + chip.width <= b.x + b.width,
+      );
+      expect(box).toBeDefined();
+    }
+    expect(new Set(chips.map((t) => t.page)).size).toBe(pageCount);
+  });
+
+  it('takes the joined text of a list inside an entry onto the next page whole', async () => {
+    const template: Template = {
+      groups: [
+        section('experience', [
+          experience({
+            items: [
+              text('jobTitle', { font: 'semibold' }),
+              { type: 'list', name: 'stack', output: 'text', item: style() },
+              { type: 'content', name: 'description' },
+            ],
+          }),
+        ]),
+      ],
+    };
+    const stack = ['TypeScript', 'React', 'PostgreSQL'];
+    const data = {
+      ...multiPage,
+      experience: multiPage.experience?.map((entry) => ({ ...entry, stack })),
+    };
+    const { texts } = await record(template, data, { fontSize: 'xl' });
+    const lines = texts.filter((t) => t.text === stack.join(', '));
+    expect(lines).toHaveLength(data.experience?.length ?? 0);
+    for (const line of lines) expect(line.y).toBeGreaterThan(30);
+  });
+});
+
 describe('entries side by side', () => {
   const achievements = (count: number): ResumeData => ({
     ...mid,
