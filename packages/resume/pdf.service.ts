@@ -1,7 +1,7 @@
 import { PDFDocument, PDFPage, StandardFonts, PDFFont, RGB, breakTextIntoLines } from 'pdf-lib';
 import fontkit from '@pdf-lib/fontkit';
 import { fromHexStr, getIconPath, getLinkIconType } from './utils';
-import { defaultFontMap, fetchCustomFont, fetchImage } from './assets';
+import { fetchCustomFont, fetchImage } from './assets';
 import {
   DrawCircleParams,
   DrawIconParams,
@@ -67,6 +67,15 @@ export const DEFAULT_CONFIG: Config = {
 
 type FontBytes = Array<{ type: FontType; arrayBuffer: ArrayBuffer }>;
 
+/** The PDF standard fonts used when no custom font is set. Every PDF viewer has them, so nothing is downloaded. */
+const STANDARD_FONTS: Record<FontType, StandardFonts> = {
+  regular: StandardFonts.Helvetica,
+  semibold: StandardFonts.HelveticaBold,
+  bold: StandardFonts.HelveticaBold,
+  italic: StandardFonts.HelveticaOblique,
+  'bold-italic': StandardFonts.HelveticaBoldOblique,
+};
+
 const fontCacheKey = (font: CustomFont) => JSON.stringify([font.name, font.fonts]);
 
 /** Folds the `color` shorthand into `colors` so layers can be merged key by key. */
@@ -99,6 +108,8 @@ export class BasePDFService {
   protected $document: PDFDocument | null = null;
   protected $pages: PDFPage[] = [];
   protected $defaultFont?: PDFFont;
+  /** Characters the standard fonts can encode. Text drawn with them is limited to this set. */
+  private $standardCharset?: Set<number>;
 
   /** Settings from the constructor or `init()`. Per-render overrides are layered on top and never written back. */
   protected $baseConfig: Config;
@@ -263,10 +274,38 @@ export class BasePDFService {
   protected async newDocument() {
     this.$document = await PDFDocument.create();
     this.$document.registerFontkit(fontkit);
-    this.$defaultFont = await this.$document.embedFont(StandardFonts.Helvetica);
-    this.$fonts = {};
+    const doc = this.$document;
+    const standard = await Promise.all(
+      (Object.keys(STANDARD_FONTS) as FontType[]).map(async (type) => [type, await doc.embedFont(STANDARD_FONTS[type])] as const),
+    );
+    this.$fonts = Object.fromEntries(standard) as Partial<Record<FontType, PDFFont>>;
+    this.$defaultFont = this.$fonts.regular;
     this.$fontFamily = 'Helvetica';
     this.$pages = [];
+  }
+
+  /** True while the document uses the standard fonts, that is when no custom font is embedded. */
+  protected get usesStandardFonts() {
+    return this.$fontFamily === 'Helvetica';
+  }
+
+  /**
+   * Makes text safe to draw with the current fonts. The standard fonts only cover WinAnsi (Western
+   * European) characters and pdf-lib throws on anything else, so with them every other character is
+   * replaced: whitespace with a space, the rest with `?`. Custom fonts get the text unchanged.
+   */
+  encodable(text: string) {
+    if (!this.usesStandardFonts) return text;
+
+    this.$standardCharset ??= new Set(this.defaultFont.getCharacterSet());
+    const charset = this.$standardCharset;
+
+    let out = '';
+    for (const char of text.normalize('NFC')) {
+      const code = char.codePointAt(0) as number;
+      out += charset.has(code) ? char : /\s/.test(char) ? ' ' : '?';
+    }
+    return out;
   }
 
   async init(config: Config = DEFAULT_CONFIG) {
@@ -312,7 +351,7 @@ export class BasePDFService {
     return bytes;
   }
 
-  async embedFonts(customFont: CustomFont = defaultFontMap) {
+  async embedFonts(customFont: CustomFont) {
     if (!this.$document) throw new Error('Initialise document first');
 
     const doc = this.$document; // ts workaround to avoid type error
@@ -349,7 +388,7 @@ export class BasePDFService {
 
       if (this.$watermark.text) {
         const color = this.$watermark.color ? fromHexStr(this.$watermark.color) : this.$colors.primary;
-        page.drawText(this.$watermark.text, {
+        page.drawText(this.encodable(this.$watermark.text), {
           x: 28,
           y: 10,
           size: this.fontSize('sm'),

@@ -10,7 +10,7 @@ yarn add @pdf-tlv/resume
 npm install @pdf-tlv/resume
 ```
 
-The library downloads the Inter font from Google Fonts when you call `create()`, so it needs a global `fetch` and network access. That means Node.js 18 or later, or any modern browser.
+Out of the box the library uses the PDF standard fonts (Helvetica), so it renders offline and downloads nothing. Custom fonts and watermark images are downloaded with the global `fetch`, which needs Node.js 18 or later, or any modern browser.
 
 ## Quick start
 
@@ -105,7 +105,7 @@ Sets up the PDF document and loads the fonts. Every option is optional.
 | `leading` | `'sm' \| 'md' \| 'lg' \| 'xl'` | `'md'` | Scale applied to line height. |
 | `screen` | `{ width, height, paddingX, paddingY }` | A4: `595 × 842`, padding `20` | Page size and margins, in PDF points. |
 | `watermark` | `{ text?, url?, color? }` | none | Draws a small mark in the bottom-left corner of every page. `url` must point to a PNG. `color` is a hex string. |
-| `customFont` | `{ name, fonts }` | Inter | Typeface for every render. See `generate()` below for the format. |
+| `customFont` | `{ name, fonts }` | Helvetica, built in | Typeface for every render. See [Fonts](#fonts) for the format. |
 
 ### `generate({ data, template, options? })`
 
@@ -118,7 +118,21 @@ await service.generate({ data, template: ember, options: { color: '#660000' } })
 await service.generate({ data, template: talvio }); // uses the color from create() again
 ```
 
-To switch typefaces, pass `customFont`:
+### Fonts
+
+Without `customFont`, every render uses Helvetica, one of the standard fonts built into every PDF viewer. Nothing is downloaded, so it works offline, in CI and in e2e tests, and a one-page resume is about 10 KB.
+
+Helvetica only covers Western European characters. Any other character, for example Cyrillic, Greek or Georgian, is drawn as `?`. For those, use a custom font that covers them.
+
+To use Inter, which the built-in templates are designed with, pass the bundled `interFont`. It is downloaded from Google Fonts, so the environment needs access to `fonts.gstatic.com`:
+
+```ts
+import { ResumePDFService, interFont } from '@pdf-tlv/resume';
+
+await service.create({ customFont: interFont });
+```
+
+To use any other typeface, pass the URLs of its five font files:
 
 ```ts
 await service.generate({
@@ -139,7 +153,7 @@ await service.generate({
 });
 ```
 
-All five font weights are required. Font files are downloaded once and cached on the service, so later renders with the same font don't download them again. The service keeps the `create()` font and the most recent other font.
+All five font weights are required. If a file can't be downloaded, `create()` or `generate()` rejects with an error naming the file. Font files are downloaded once and cached on the service, so later renders with the same font don't download them again. The service keeps the `create()` font and the most recent other font.
 
 ### Colors
 

@@ -16,7 +16,7 @@ Known issues that have a workaround in place but still need a proper fix.
 **Still affected:**
 
 - Any resume whose main column breaks at a row. The `multiPage` fixture with `talvio` shows bug 1: page 1 is drawn over, and page 2 holds a single job title.
-- Any line with an icon that starts a new page. The `senior` fixture with `talvio` at `md` size shows bug 2: a recommendation's link icon sits alone at the bottom of page 2.
+- Any line with an icon that starts a new page. The `senior` fixture with `talvio` at `md` size and the Inter font shows bug 2: a recommendation's link icon sits alone at the bottom of page 2.
 
 **Fix:** In `writeRow`, pass `pageIndex: currentPageIndex` to `writeMultiLine`. In `writeLine`, draw the icon at the line's final position (`currentY` plus the line's height) instead of `y`. The `writeRow` change alone was tried in a local build and fixes `multiPage`; the icon change has not been tried yet. Check `multiPage`, `senior` and `longText` with every template in the playground (`yarn playground`, "Template × every fixture") before releasing.
 
@@ -40,6 +40,6 @@ Known issues that have a workaround in place but still need a proper fix.
 
 **Where:** `embedFonts` in `packages/resume/pdf.service.ts`.
 
-**Problem:** Before 0.2.4 the font map was built wrongly and every PDF fell back to Helvetica. Now the five Inter files are embedded whole, so a one-page resume is about 930 KB instead of about 6 KB.
+**Problem:** When a custom font such as `interFont` is set, the five font files are embedded whole, so a one-page resume is about 930 KB instead of about 10 KB with the default Helvetica.
 
 **Fix:** Embed with `doc.embedFont(bytes, { subset: true })`. A quick test brings the file back to about 6 KB. `@pdf-lib/fontkit` subsetting has known glyph bugs with some fonts, so check the output in Acrobat, Chrome and macOS Preview, including non-Latin text, before switching it on.

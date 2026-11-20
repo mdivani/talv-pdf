@@ -2,8 +2,8 @@ import type { ResumeData } from '../types';
 import { edu, exp } from './helpers';
 
 /**
- * Accented Latin, Greek and Cyrillic, which the default Inter font covers, plus Georgian, which it does not.
- * Unsupported scripts show which characters need a custom font.
+ * Accented Latin, Greek, Cyrillic and Georgian. The default Helvetica covers only the accented Latin and
+ * draws the rest as `?`. Inter (`interFont`) adds Greek and Cyrillic but not Georgian.
  */
 export const international: ResumeData = {
   name: 'Zoë Ångström-Müller',

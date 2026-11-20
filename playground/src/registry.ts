@@ -3,6 +3,7 @@
 import * as templateExports from '@resume/templates';
 import { fixtures } from '@resume/fixtures';
 import { ResumePDFService } from '@resume/resume-pdf.service';
+import { interFont } from '@resume/assets';
 import type { Template } from '@resume/types';
 
 const isTemplate = (value: unknown): value is Template =>
@@ -13,4 +14,4 @@ export const templates: Record<string, Template> = Object.fromEntries(
   Object.entries(templateExports).filter(([, value]) => isTemplate(value)),
 );
 
-export { fixtures, ResumePDFService };
+export { fixtures, ResumePDFService, interFont };

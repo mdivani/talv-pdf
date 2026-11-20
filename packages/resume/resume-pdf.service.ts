@@ -3,10 +3,19 @@ import { Template, Group, Item, Field, Coords, Size, LabelItem, SeparatorVariant
 import { ContentToPdfService } from './content-to-pdf.service';
 import { Config, DEFAULT_CONFIG, RenderOptions } from './pdf.service';
 import { getWidth, mapDataToTemplate, hasContent, hasText } from './utils';
-import { defaultFontMap } from './assets';
 export { formatTextWithAffixes, getWidth, mapDataToTemplate } from './utils';
 
 type CreateParams = Partial<Config>;
+
+/** Copies plain data (objects, arrays, strings), passing every string through `fn`. */
+function mapStrings<T>(value: T, fn: (text: string) => string): T {
+  if (typeof value === 'string') return fn(value) as T;
+  if (Array.isArray(value)) return value.map((item) => mapStrings(item, fn)) as T;
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, mapStrings(item, fn)])) as T;
+  }
+  return value;
+}
 
 type GenerateParams = {
   data: ResumeData;
@@ -31,11 +40,13 @@ export class ResumePDFService extends ContentToPdfService {
     colors,
     isPreview = DEFAULT_CONFIG.isPreview,
     watermark,
-    customFont = defaultFontMap,
+    customFont,
   }: CreateParams = DEFAULT_CONFIG) {
     await super.init({ screen, fontSize, leading, color, colors, isPreview, watermark, customFont });
 
-    this.$fonts = await super.embedFonts(customFont);
+    // Download a custom font now so the first render doesn't wait for it. Only the bytes are cached:
+    // each render embeds them into its own document. Without a custom font, nothing is fetched.
+    if (customFont) await this.loadFonts(customFont);
 
     this.$ready = true;
   }
@@ -52,7 +63,10 @@ export class ResumePDFService extends ContentToPdfService {
     const render = this.$queue.then(async () => {
       await this.update(options);
 
-      const fields = mapDataToTemplate(data, template);
+      // With the standard fonts, characters they can't encode are replaced before layout, so text is
+      // measured and drawn the same way. Template strings (labels, separators) go through it too.
+      const encodable = (text: string) => this.encodable(text);
+      const fields = mapDataToTemplate(mapStrings(data, encodable), mapStrings(template, encodable));
 
       await this.writeToPDF(fields.groups);
 

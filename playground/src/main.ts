@@ -10,11 +10,13 @@ import * as initialRegistry from './registry';
 GlobalWorkerOptions.workerSrc = workerSrc;
 
 type Mode = 'single' | 'fixtures' | 'templates';
+type Font = 'standard' | 'inter';
 
 type State = {
   mode: Mode;
   template: string;
   fixture: string;
+  font: Font;
   color: string;
   fontSize: Size;
   leading: Size;
@@ -42,6 +44,7 @@ const DEFAULT_STATE: State = {
   mode: 'single',
   template: 'talvio',
   fixture: 'entry',
+  font: 'standard',
   color: SWATCHES.Talvio,
   fontSize: 'md',
   leading: 'md',
@@ -67,6 +70,7 @@ const el = {
   fixture: $<HTMLSelectElement>('fixture'),
   templateField: $<HTMLLabelElement>('template-field'),
   fixtureField: $<HTMLLabelElement>('fixture-field'),
+  font: $<HTMLSelectElement>('font'),
   color: $<HTMLInputElement>('color'),
   swatches: $<HTMLSpanElement>('swatches'),
   fontSize: $<HTMLSelectElement>('fontSize'),
@@ -110,6 +114,7 @@ function syncControls() {
   fillSelect(el.template, templateKeys, state.template);
   fillSelect(el.fixture, fixtureKeys, state.fixture);
   el.mode.value = state.mode;
+  el.font.value = state.font;
   el.color.value = state.color;
   el.fontSize.value = state.fontSize;
   el.leading.value = state.leading;
@@ -154,6 +159,7 @@ const renderKey = () =>
     state.mode,
     state.template,
     state.fixture,
+    state.font,
     state.color,
     state.fontSize,
     state.leading,
@@ -197,7 +203,12 @@ async function render() {
         const bytes = await pdf.generate({
           data: job.data,
           template: job.template,
-          options: { color: state.color, fontSize: state.fontSize, leading: state.leading },
+          options: {
+            color: state.color,
+            fontSize: state.fontSize,
+            leading: state.leading,
+            customFont: state.font === 'inter' ? registry.interFont : undefined,
+          },
         });
         next.push({ job, bytes, ms: performance.now() - started });
       } catch (error) {
@@ -327,6 +338,7 @@ function update(patch: Partial<State>, redrawOnly = false) {
 el.mode.addEventListener('change', () => update({ mode: el.mode.value as Mode }));
 el.template.addEventListener('change', () => update({ template: el.template.value }));
 el.fixture.addEventListener('change', () => update({ fixture: el.fixture.value }));
+el.font.addEventListener('change', () => update({ font: el.font.value as Font }));
 el.color.addEventListener('input', () => update({ color: el.color.value }));
 el.fontSize.addEventListener('change', () => update({ fontSize: el.fontSize.value as Size }));
 el.leading.addEventListener('change', () => update({ leading: el.leading.value as Size }));

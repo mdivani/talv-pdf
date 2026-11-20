@@ -18,7 +18,7 @@ For installation, usage and the template format, see the [package README](packag
 
 ## Development
 
-The repo is a Yarn 4 workspace. You need Node.js 18 or later, because the library loads fonts with the global `fetch`.
+The repo is a Yarn 4 workspace. You need Node.js 18 or later, because the library downloads custom fonts with the global `fetch`.
 
 ```sh
 yarn install
@@ -40,7 +40,7 @@ The playground renders templates in the browser straight from the package source
 yarn playground
 ```
 
-This opens `http://localhost:5173`. Pick a template, a fixture, an accent color and a type scale in the sidebar. Your choices are kept in the URL, so you can bookmark or share a view. There are three views:
+This opens `http://localhost:5173`. Pick a template, a fixture, a font, an accent color and a type scale in the sidebar. Your choices are kept in the URL, so you can bookmark or share a view. There are three views:
 
 | View | Shows |
 | --- | --- |
